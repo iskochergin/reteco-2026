@@ -1,0 +1,17 @@
+data/*
+!data/.gitkeep
+runs/*
+!runs/.gitkeep
+vendor/
+
+*.trec
+*.npy
+*.jsonl
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.ipynb_checkpoints/
+.DS_Store
