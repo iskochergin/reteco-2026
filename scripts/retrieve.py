@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Первая стадия поиска RETECO трек 2: BM25 (официальный, из кита) или плотный.
+"""Первая стадия поиска RETECO трек 2: BM25 (кит или Lucene, опц. RM3) или плотный.
 
 Один прогон = один способ поиска × одно представление запроса × сплит.
 Пишет runs/<имя>/<домен>/run.trec (формат сабмита) и runs/<имя>/config.json.
@@ -7,18 +7,25 @@
     # B1, воспроизведение официального: BM25 на реплике + истории
     $PY scripts/retrieve.py --method bm25 --query hist --out runs/2026-09-28_b1_bm25_hist
 
-    # B3: плотный zero-shot на переписанном запросе + истории
-    $PY scripts/retrieve.py --method dense --model Qwen/Qwen3-Embedding-0.6B \
-        --query rewrite_hist --rewrites runs/rewrites/llama70b/dev.jsonl --out runs/...
+    # тот же BM25 через Lucene (pyserini) и с обратной связью RM3
+    $PY scripts/retrieve.py --method lucene --query hist --out runs/...
+    $PY scripts/retrieve.py --method lucene --rm3 --query hist --out runs/...
 
-Представления запроса (--query):
-    query         только текущая реплика                      (официальный 2a)
-    hist          реплика + "Conversation History:\\n" + история (официальный 2a_hist)
-    rewrite       LLM-переписанная самостоятельная реплика   (нужен --rewrites)
-    rewrite_hist  rewrite + история
+    # вариант запроса из rewrite.py
+    $PY scripts/retrieve.py --method bm25 --queries runs/rewrites/q2d/dev.jsonl --out runs/...
 
-Эмбеддинги корпуса кэшируются в data/index/<модель>/<домен>.npy (fp16) и
-переиспользуются между сплитами и представлениями запроса.
+Представления запроса:
+    --query query   только текущая реплика                      (официальный 2a)
+    --query hist    реплика + "Conversation History:" + история  (официальный 2a_hist)
+    --queries F     готовые тексты из JSONL (domain, topic_id, text) — варианты rewrite.py
+
+Методы:
+    bm25     официальный BM25 кита (gensim LuceneBM25Model, k1=0.9, b=0.4);
+             числа совпадают с опубликованными
+    lucene   BM25 с тем же анализатором, но через индекс Lucene (pyserini); нужен
+             для RM3. Индекс строится один раз в data/index/lucene/<домен>
+    dense    плотный поиск (sentence-transformers); эмбеддинги корпуса кэшируются
+             в data/index/<модель>/<домен>.npy (fp16) — считать их в Colab
 """
 import argparse
 import datetime as dt
@@ -28,6 +35,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -43,16 +51,10 @@ DOMAINS = ["biology", "drones", "earth_science", "economics", "hardware", "law",
            "medicalsciences", "politics", "psychology", "robotics",
            "sustainable_living"]
 
-# Промпты запроса/документа по моделям. Diver — как в retrievers.py RECOR;
-# Qwen3-Embedding — как в карточке модели (документ без префикса).
-PREFIXES = {
-    "Qwen/Qwen3-Embedding": (
-        "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:",
-        ""),
-    "AQ-MedAI/Diver-Retriever": (
-        "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:",
-        "Represent this text:"),
-}
+# Промпты запроса/документа берутся из config_sentence_transformers.json самой
+# модели (prompt_name="query"/"document"): так кодирует и Colab-ноутбук.
+# У Diver там документ БЕЗ префикса; RECOR в своём коде добавлял
+# "Represent this text:" — см. docs/gotchas.md.
 
 
 def official_kit():
@@ -64,19 +66,15 @@ def official_kit():
     return mod
 
 
-def load_rewrites(path):
-    out = {}
+def load_queries(path):
+    """Ключ — (домен, topic_id): в доменах BRIGHT topic_id повторяются между доменами."""
     with open(path, encoding="utf-8") as f:
-        for ln in f:
-            if ln.strip():
-                r = json.loads(ln)
-                out[r["topic_id"]] = r["rewrite"]
-    return out
+        return {(r["domain"], r["topic_id"]): r["text"] for r in map(json.loads, filter(str.strip, f))}
 
 
-def topics(domain, split, variant, rewrites):
+def topics(domain, split, variant, given):
     """Как _recor_topics в ките: реплики без золота пропускаются, история
-    приклеивается ровно тем же разделителем."""
+    приклеивается ровно тем же разделителем. given — тексты из --queries."""
     convs = json.load(open(os.path.join(DATA, domain, f"benchmark_{split}.json"),
                            encoding="utf-8"))
     ids, texts = [], []
@@ -85,18 +83,18 @@ def topics(domain, split, variant, rewrites):
             if not (t.get("gold_doc_ids") or t.get("supporting_doc_ids")):
                 continue
             qid = f"{c['id']}_turn_{t['turn_id']}"
-            base = t["query"]
-            if variant.startswith("rewrite"):
-                if qid not in rewrites:
-                    sys.exit(f"нет переписывания для {qid} в --rewrites")
-                base = rewrites[qid]
-            parts = [base]
-            if variant.endswith("hist"):
+            if given is not None:
+                if (domain, qid) not in given:
+                    sys.exit(f"нет текста запроса для {domain}/{qid} в --queries")
+                text = given[(domain, qid)]
+            else:
+                parts = [t["query"]]
                 h = t.get("conversation_history", "")
-                if h and h != "No previous conversation.":
+                if variant == "hist" and h and h != "No previous conversation.":
                     parts.append(f"Conversation History:\n{h}")
+                text = "\n\n".join(parts)
             ids.append(qid)
-            texts.append("\n\n".join(parts))
+            texts.append(text)
     return ids, texts
 
 
@@ -114,9 +112,37 @@ def run_bm25(kit, doc_ids, docs, qids, qtexts, topk):
     return {q: sorted(v.items(), key=lambda x: -x[1])[:topk] for q, v in scores.items()}
 
 
+# -------------------------------------------------------------- Lucene ------
+def lucene_index(dom, doc_ids, docs):
+    """Индекс Lucene с векторами документов (нужны RM3). Строится один раз."""
+    idx = os.path.join(ROOT, "data", "index", "lucene", dom)
+    if os.path.isdir(idx) and any(f.startswith("segments") for f in os.listdir(idx)):
+        return idx
+    with tempfile.TemporaryDirectory() as tmp:
+        with open(os.path.join(tmp, "docs.jsonl"), "w", encoding="utf-8") as f:
+            for i, t in zip(doc_ids, docs):
+                f.write(json.dumps({"id": i, "contents": t}, ensure_ascii=False) + "\n")
+        subprocess.run([sys.executable, "-m", "pyserini.index.lucene",
+                        "--collection", "JsonCollection", "--input", tmp, "--index", idx,
+                        "--generator", "DefaultLuceneDocumentGenerator", "--threads", "4",
+                        "--storeDocvectors"], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return idx
+
+
+def run_lucene(idx, qids, qtexts, topk, rm3):
+    from pyserini.search.lucene import LuceneSearcher
+    s = LuceneSearcher(idx)
+    s.set_bm25(0.9, 0.4)                     # как у кита
+    if rm3:
+        s.set_rm3(fb_terms=rm3[0], fb_docs=rm3[1], original_query_weight=rm3[2])
+    hits = s.batch_search(qtexts, qids, k=topk, threads=8)
+    return {q: [(h.docid, h.score) for h in hits.get(q, [])] for q in qids}
+
+
 # --------------------------------------------------------------- dense ------
 class Dense:
-    def __init__(self, model_name, max_doc_len, max_q_len, batch, fp16, q_prefix, d_prefix):
+    def __init__(self, model_name, max_doc_len, max_q_len, batch, fp16, q_prompt, d_prompt):
         import torch
         from sentence_transformers import SentenceTransformer
         self.torch = torch
@@ -126,29 +152,27 @@ class Dense:
         self.model = SentenceTransformer(model_name, device=self.device,
                                          model_kwargs=kw, trust_remote_code=True)
         self.max_doc_len, self.max_q_len, self.batch = max_doc_len, max_q_len, batch
-        self.q_prefix, self.d_prefix = q_prefix, d_prefix
+        prompts = self.model.prompts or {}
+        self.q_prompt = prompts.get("query", "") if q_prompt is None else q_prompt
+        self.d_prompt = prompts.get("document", "") if d_prompt is None else d_prompt
 
-    def encode(self, texts, prefix, max_len, desc):
+    def encode(self, texts, prompt, max_len, desc):
         self.model.max_seq_length = max_len
-        if prefix:
-            # Qwen3-Embedding: "...\nQuery:{text}" без пробела, как в карточке модели
-            sep = "" if prefix.endswith((":", "\n")) else " "
-            texts = [prefix + sep + t for t in texts]
-        return self.model.encode(texts, batch_size=self.batch, normalize_embeddings=True,
-                                 convert_to_numpy=True, show_progress_bar=True)
+        return self.model.encode(texts, prompt=prompt, batch_size=self.batch,
+                                 normalize_embeddings=True, convert_to_numpy=True,
+                                 show_progress_bar=True)
 
     def corpus(self, cache, docs):
         import numpy as np
         if os.path.isfile(cache):
             return np.load(cache)
-        emb = self.encode(docs, self.d_prefix, self.max_doc_len, "docs").astype("float16")
+        emb = self.encode(docs, self.d_prompt, self.max_doc_len, "docs").astype("float16")
         os.makedirs(os.path.dirname(cache), exist_ok=True)
         np.save(cache, emb)
         return emb
 
     def search(self, emb, doc_ids, qids, qtexts, topk):
-        import numpy as np
-        q = self.encode(qtexts, self.q_prefix, self.max_q_len, "queries").astype("float32")
+        q = self.encode(qtexts, self.q_prompt, self.max_q_len, "queries").astype("float32")
         D = self.torch.from_numpy(emb.astype("float32")).to(self.device)
         Q = self.torch.from_numpy(q).to(self.device)
         out = {}
@@ -164,9 +188,12 @@ class Dense:
 # ---------------------------------------------------------------- main ------
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--method", choices=["bm25", "dense"], required=True)
-    ap.add_argument("--query", choices=["query", "hist", "rewrite", "rewrite_hist"], required=True)
-    ap.add_argument("--rewrites", help="JSONL с полями topic_id, rewrite")
+    ap.add_argument("--method", choices=["bm25", "lucene", "dense"], required=True)
+    ap.add_argument("--query", choices=["query", "hist"], default="hist")
+    ap.add_argument("--queries", help="JSONL с полями domain, topic_id, text — вместо --query")
+    ap.add_argument("--rm3", action="store_true", help="только для --method lucene")
+    ap.add_argument("--rm3-params", nargs=3, type=float, default=[10, 10, 0.5],
+                    metavar=("TERMS", "DOCS", "ORIG_W"), help="по умолчанию Anserini: 10 10 0.5")
     ap.add_argument("--split", default="dev", choices=["train", "dev"])
     ap.add_argument("--domains", nargs="*", default=DOMAINS)
     ap.add_argument("--out", required=True, help="runs/<дата>_<имя>")
@@ -178,25 +205,25 @@ def main():
     ap.add_argument("--max-q-len", type=int, default=1024)
     ap.add_argument("--batch", type=int, default=64)
     ap.add_argument("--no-fp16", action="store_true")
-    ap.add_argument("--query-prefix", default=None)
-    ap.add_argument("--doc-prefix", default=None)
+    ap.add_argument("--query-prompt", default=None, help="по умолчанию из конфига модели")
+    ap.add_argument("--doc-prompt", default=None, help="по умолчанию из конфига модели")
     args = ap.parse_args()
 
-    if args.query.startswith("rewrite") and not args.rewrites:
-        sys.exit("--query rewrite* требует --rewrites")
-    rewrites = load_rewrites(args.rewrites) if args.rewrites else {}
-    tag = args.tag or f"{args.method}_{args.query}"
+    given = load_queries(args.queries) if args.queries else None
+    qname = os.path.basename(os.path.dirname(args.queries)) if args.queries else args.query
+    rm3 = (int(args.rm3_params[0]), int(args.rm3_params[1]), args.rm3_params[2]) if args.rm3 else None
+    if rm3 and args.method != "lucene":
+        sys.exit("--rm3 только с --method lucene")
+    tag = args.tag or f"{args.method}{'_rm3' if rm3 else ''}_{qname}"
     os.makedirs(args.out, exist_ok=True)
 
     kit = official_kit()
     dense = None
     if args.method == "dense":
-        qp, dp = next((v for k, v in PREFIXES.items() if args.model.startswith(k)), ("", ""))
-        qp = args.query_prefix if args.query_prefix is not None else qp
-        dp = args.doc_prefix if args.doc_prefix is not None else dp
         dense = Dense(args.model, args.max_doc_len, args.max_q_len, args.batch,
-                      not args.no_fp16, qp, dp)
-        print(f"модель {args.model} на {dense.device}, префикс запроса {qp!r}, документа {dp!r}")
+                      not args.no_fp16, args.query_prompt, args.doc_prompt)
+        print(f"модель {args.model} на {dense.device}, промпт запроса {dense.q_prompt!r}, "
+              f"документа {dense.d_prompt!r}")
 
     t0 = time.time()
     for dom in args.domains:
@@ -204,12 +231,14 @@ def main():
         if os.path.isfile(out_path):
             print(f"[cached] {dom}"); continue
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
-        qids, qtexts = topics(dom, args.split, args.query, rewrites)
+        qids, qtexts = topics(dom, args.split, args.query, given)
         doc_ids, docs = kit.load_corpus(os.path.join(DATA, dom, "documents.jsonl"), "doc_id")
         print(f"\n=== {dom}: {len(docs)} док, {len(qids)} реплик ===", flush=True)
         t = time.time()
         if args.method == "bm25":
             ranked = run_bm25(kit, doc_ids, docs, qids, qtexts, args.topk)
+        elif args.method == "lucene":
+            ranked = run_lucene(lucene_index(dom, doc_ids, docs), qids, qtexts, args.topk, rm3)
         else:
             slug = re.sub(r"[^A-Za-z0-9._-]", "_", args.model)
             cache = os.path.join(ROOT, "data", "index", slug, f"{dom}.npy")

@@ -15,3 +15,6 @@ venv/
 .env
 .ipynb_checkpoints/
 .DS_Store
+
+# папка для загрузки на Google Drive, собирается из runs/
+colab/drive/
