@@ -1,182 +1,74 @@
-# RETECO 2026 · разговорный поиск и отказ от ответа
+# reteco-2026
 
-Участие в **SemEval-2027 Task 1 (RETECO), трек 2 (RECOR)** - поиск в диалоге.
-[Сайт соревнования](https://datascienceuibk.github.io/RETECO/) ·
-[данные](https://huggingface.co/datasets/DataScience-UIBK/RETECO-SemEval2027) ·
-[кит организаторов](https://github.com/DataScienceUIBK/RETECO)
+Our entry for **SemEval-2027 Task 1 (RETECO), Track 2: conversational retrieval (RECOR)**.
+[Task site](https://datascienceuibk.github.io/RETECO/) ·
+[data](https://huggingface.co/datasets/DataScience-UIBK/RETECO-SemEval2027) ·
+[starter kit](https://github.com/DataScienceUIBK/RETECO)
 
-Цели: препринт на arXiv к ноябрю 2026, сабмит на лидерборд 10-31 января 2027.
+## Task
 
-## Задача
+A Stack Exchange question is split into a dialogue of 3-5 short turns that are
+not self-contained. For each turn:
 
-Вопрос со Stack Exchange разбит на диалог из 3-5 коротких реплик. Реплики
-несамостоятельные: «а у 6-баночной сборки напряжение тоже растёт?» без истории
-не понять. Для каждой реплики нужно найти в корпусе документы, на которых
-строится ответ, и (в 2b, 2c) написать сам ответ.
+- **2a** - retrieve supporting documents (nDCG@10, macro over 11 domains)
+- **2b** - answer from the gold documents
+- **2c** - retrieve, then answer from your own top-5
 
-- 11 доменов: биология, дроны, науки о Земле, экономика, железо, право,
-  медицина, политика, психология, робототехника, экология
-- корпус домена - 16-121 тыс. коротких документов (медиана 20 слов)
-- dev 858 реплик, train 2113
-- метрика поиска **nDCG@10**, макро по доменам; ответ судит GPT-4o по пяти осям
+## Research question
 
-| подтрек | вход | выход |
-|---|---|---|
-| **2a** | реплика + история + корпус | список документов, считаются топ-10 |
-| **2b** | реплика + история + **золотые документы** | текст ответа |
-| **2c** | реплика + история + корпус | топ-5 документов + текст ответа |
+When does the reader know the context is not enough? In 2b the context is
+sufficient by construction, in 2c it may not be. qrels give a per-turn
+sufficiency label (how many gold docs made it into the top-5). We test whether
+[OCC-RAG-1.7B](https://huggingface.co/occ-ai/OCC-RAG-1.7B), which outputs an
+explicit ANSWERABLE / UNANSWERABLE status, abstains when evidence is missing,
+using first-stage retrievers of different strength as the "dose".
 
-## Над чем работаем
-
-**Поиск (2a).** Как из короткой реплики и истории собрать хороший запрос и как
-искать по корпусу: BM25, плотные модели, слияние списков, реранк.
-
-**Отказ от ответа (2b против 2c) - вопрос статьи.** В 2b контекст заведомо
-достаточен, в 2c он свой и может не содержать ответа. Для каждой реплики из
-qrels известно, сколько золотых документов попало в топ-5, - это метка
-достаточности контекста. Смотрим, замечает ли ридер нехватку контекста:
-отказывается ли он, когда ответа в документах нет, и выдумывает ли, когда
-отвечает. Ридер - [OCC-RAG-1.7B](https://huggingface.co/occ-ai/OCC-RAG-1.7B),
-который явно выдаёт статус ANSWERABLE / UNANSWERABLE, плюс открытая модель для
-контроля. Поиск разной силы даёт «дозу»: чем слабее поиск, тем чаще в контексте
-нет ответа.
-
-## Схема
+## Pipeline
 
 ```mermaid
-flowchart TD
-    post["пост Stack Exchange<br/>раздроблен на 3-5 реплик"] --> turn
-    turn["РЕПЛИКА<br/>query - текущая реплика, ~19 слов<br/>history - Q: ... A: ... за все прошлые реплики"]
-    turn --> query["Запрос<br/>собрать текст для поиска"]
-    query --> search["Поиск по корпусу"]
-    corpus["Корпус домена<br/>16-121 тыс. документов"] --> search
-    search --> list["Список документов<br/>100 кандидатов по убыванию"]
-    list --> out2a["2a: сдаём список<br/>считаются первые 10"]
-    list --> reader["Ридер (LLM)<br/>берёт топ-5, пишет ответ"]
-    gold["Золотые документы<br/>даны только в 2b, вместо поиска"] --> reader
-    reader --> answer["Ответ<br/>текст, судит GPT-4o"]
-    answer --> out2b["2b: сдаём ответ<br/>по золотым документам"]
-    answer --> out2c["2c: сдаём топ-5 + ответ<br/>по найденным документам"]
+flowchart LR
+    T["Turn<br/>query + history"] --> Q["Query<br/>build search text"]
+    Q --> S["Search"]
+    C["Domain corpus<br/>16k-121k docs"] --> S
+    S --> L["Ranked list<br/>top-100"]
+    L --> A["2a: top-10"]
+    L --> R["Reader (LLM)<br/>top-5 to answer"]
+    G["Gold docs<br/>2b only"] --> R
+    R --> B["2b: answer"]
+    R --> D["2c: top-5 + answer"]
 
     classDef ours fill:#f04a23,stroke:#b8341a,color:#fff
     classDef data fill:#666,stroke:#444,color:#fff
     classDef out fill:#5fd068,stroke:#3a9a44,color:#111
-    class query,search,reader ours
-    class turn,corpus,list,gold,answer data
-    class out2a,out2b,out2c out
+    class Q,S,R ours
+    class T,C,L,G data
+    class A,B,D out
 ```
 
-Красное - то, что мы строим. Варианты для каждого красного блока:
+- **Query** - LLM rewrite, history handling, HyDE / Query2Doc, feedback expansion (DIVER QExpand)
+- **Search** - BM25, dense (Diver-Retriever-4B, reason-embed-4B), fusion, rerank (Qwen3-Reranker-4B, ReasonRank-7B)
+- **Reader** - OCC-RAG-1.7B vs an open control model
 
-**Запрос - какой текст подать в поиск**
-1. вопрос
-   - как есть
-   - раскрыть местоимения по истории
-   - разбить на подвопросы
-   - задать более общий вопрос
-2. история
-   - приклеить целиком
-   - обрезать, если сменилась тема
-   - расширить последний ответ
-   - последние N пар
-3. генерация
-   - заменить вопрос гипотетическим ответом (HyDE)
-   - приклеить гипотетический ответ к вопросу (Query2Doc)
-   - дописать ключевые слова
-4. обратная связь
-   - BM25 + RM3: термины из топ-10 дописать и искать снова
-   - LLM видит топ-5 найденного и переписывает запрос (DIVER QExpand)
-5. несколько вариантов сразу - сгенерировать N, слить списки
+## Results so far (nDCG@10)
 
-**Поиск**
-1. по словам - BM25, BM25 + RM3
-2. по смыслу - Diver-Retriever-4B, reason-embed-qwen3-4b
-3. слить списки - RRF, по баллам с весами из train
-4. реранк - Qwen3-Reranker-4B по топ-100, LLM переставляет топ-20,
-   смешать 0.6 реранк + 0.4 поиск
-5. память диалога - подмешать списки прошлых реплик
-
-**Ридер** - OCC-RAG-1.7B и открытая модель-контроль; ответ по золоту (2b) и по
-топ-5 поиска трёх уровней силы (2c).
-
-Полная доска из Figma с пояснениями: [docs/scheme.webp](docs/scheme.webp).
-
-![доска](docs/scheme.webp)
-
-## Результаты (nDCG@10, макро по 11 доменам)
-
-Всё выбирается по train, dev - только отчёт.
-
-| запрос | поиск | dev | train |
-|---|---|---|---|
-| реплика | BM25 | 0.1827 | - |
-| реплика + история (официальный бейзлайн) | BM25 | 0.4379 | 0.4539 |
-| реплика + история | BM25 Lucene / + RM3 | 0.3967 / хуже | 0.4113 / хуже |
-| переписанный вопрос | BM25 | 0.3096 | 0.3082 |
-| переписанный вопрос + история | BM25 | 0.4496 | 0.4625 |
-| обрезать при смене темы | BM25 | 0.4361 | 0.4539 |
-| гипотетический ответ (HyDE) | BM25 | 0.4796 | 0.4986 |
-| переписанный + гипотетический ответ | BM25 | 0.4928 | 0.5037 |
-| реплика + история + гипотетический ответ (Query2Doc) | BM25 | 0.5463 | 0.5584 |
-| переписанный + история + гипотетический ответ | BM25 | 0.5448 | 0.5603 |
-| **слияние трёх последних по баллам** | BM25 | **0.5496** | **0.5610** |
-
-Лучший на сегодня: +0.112 к официальному бейзлайну, Recall@100 = 0.920, рост во
-всех 11 доменах. Переписывания сделаны Claude Sonnet. Память диалога и RM3
-ухудшают. Плотные модели, реранк, LLM-запросы и генерация ответов - в
-Colab-ноутбуках, результаты ещё не получены.
-
-## Структура
-
-```
-scripts/retrieve.py   поиск: BM25 кита, Lucene (+RM3), плотный
-scripts/rewrite.py    варианты запроса через LLM
-scripts/fuse.py       слияние списков: RRF, по баллам, память диалога
-scripts/score.py      nDCG@10, сравнение с бейзлайном
-colab/build.py        собирает все ноутбуки (правки только здесь)
-colab/*.ipynb         всё, что требует GPU или LLM
-docs/                 план, журнал, данные, грабли, источники
-```
-
-## Colab-ноутбуки
-
-Тяжёлое считается только в Colab. Данные ноутбуки качают с HF сами, результаты
-пишут на Google Drive в `reteco/` и после обрыва продолжают с места остановки.
-Перед первым запуском положить папку `colab/drive/reteco` в корень Drive.
-
-| ноутбук | что делает | GPU |
+| system | dev | train |
 |---|---|---|
-| `diver`, `reason_embed` | плотный поиск по всему корпусу | T4 |
-| `rerank` | Qwen3-Reranker-4B переставляет топ-100 | T4 |
-| `query` | варианты запроса на открытой LLM + QExpand, BM25 кита | A100 / L4 |
-| `llm_rerank` | ReasonRank-7B переставляет топ-20 | A100 |
-| `generate` | ответы 2b и 2c, статус и уверенность ридера | A100 / L4 |
-| `judge` | оценка ответов по пяти осям (открытая модель или GPT-4o) | A100 / L4 |
-| `analysis` | все таблицы, бутстреп, сабмит 2a | CPU |
+| BM25, turn only | 0.1827 | - |
+| BM25, turn + history (official baseline) | 0.4379 | 0.4539 |
+| + LLM rewrite | 0.4496 | 0.4625 |
+| + hypothetical passage (Query2Doc) | 0.5463 | 0.5584 |
+| score fusion of 3 query variants | **0.5496** | **0.5610** |
 
-## Локально
+Weights are chosen on train. Dense retrieval, reranking and generation are running in Colab.
 
-Локально только BM25 и подсчёт метрик.
+## Layout
 
-```bash
-brew install openjdk@21 uv
-uv venv --python 3.12 ~/.reteco-venv
-uv pip install --python ~/.reteco-venv/bin/python \
-    pyarrow huggingface_hub tqdm gensim pytrec-eval-terrier pyserini sentence-transformers
-git clone --depth 1 https://github.com/DataScienceUIBK/RETECO.git vendor/RETECO
-~/.reteco-venv/bin/hf download DataScience-UIBK/RETECO-SemEval2027 --repo-type dataset \
-    --local-dir data/reteco --include "track2_recor/*" "split_manifest.json"
-PY=~/.reteco-venv/bin/python
+```
+scripts/   BM25 retrieval, LLM query variants, fusion, scoring
+colab/     GPU notebooks, generated by colab/build.py
+docs/      plan, log, data notes (in Russian)
 ```
 
-venv лежит вне папки проекта: папка синхронизируется Yandex.Disk.
-
-```bash
-$PY scripts/score.py --check-baseline                                    # сверка с таблицей организаторов
-$PY scripts/retrieve.py --method bm25 --query hist --out runs/2026-09-28_b1_bm25_hist
-$PY scripts/retrieve.py --method bm25 --queries runs/rewrites/q2d/dev.jsonl --out runs/..._q2d
-$PY scripts/score.py --runs runs/2026-09-28_b1_bm25_hist
-$PY scripts/fuse.py --mode score --runs runs/A runs/B --weights 0.5 0.5 --out runs/AB
-```
-
-Если что-то не работает - `docs/gotchas.md`.
+Heavy compute runs only in Colab: upload `colab/drive/reteco` to the Drive root,
+then open a notebook and Run all. Local setup (BM25 and metrics only) is in
+`docs/gotchas.md`.

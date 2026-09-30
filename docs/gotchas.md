@@ -49,6 +49,20 @@ client.chat.completions.create(
 
 ## Окружение на этой машине (M3 Pro, 18 ГБ, macOS)
 
+Установка (один раз):
+
+```bash
+brew install openjdk@21 uv
+uv venv --python 3.12 ~/.reteco-venv
+uv pip install --python ~/.reteco-venv/bin/python \
+    pyarrow huggingface_hub tqdm gensim pytrec-eval-terrier pyserini sentence-transformers
+git clone --depth 1 https://github.com/DataScienceUIBK/RETECO.git vendor/RETECO
+~/.reteco-venv/bin/hf download DataScience-UIBK/RETECO-SemEval2027 --repo-type dataset \
+    --local-dir data/reteco --include "track2_recor/*" "split_manifest.json"
+PY=~/.reteco-venv/bin/python
+$PY scripts/score.py --check-baseline      # сверка с таблицей организаторов
+```
+
 - Системный python — 3.14, pyserini его не поддерживает. venv на 3.12 через `uv`,
   лежит в `~/.reteco-venv`, **вне Yandex.Disk** — синхронизация не переживает
   десятки тысяч файлов.
