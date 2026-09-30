@@ -529,7 +529,8 @@ A100 → побольше; LLM через vLLM (T4: `dtype="half"`, bf16 там 
 Реплика везде идентифицируется парой (домен, topic_id). `doc_id` моделям
 не показывать. Локально ноутбуки проверяются только по логике, без моделей.
 
-Готовы: `diver.ipynb`, `reason_embed.ipynb`, `rerank.ipynb`.
+Готовы (30.09): `diver.ipynb`, `reason_embed.ipynb`, `rerank.ipynb`, `generate.ipynb`,
+`judge.ipynb`, `query.ipynb`, `llm_rerank.ipynb`, `analysis.ipynb`. Порядок запуска — docs/LOG.md, 30.09.
 
 ## generate.ipynb — ридер для 2b и 2c (главный эксперимент статьи)
 - Ридеры: `occ-ai/OCC-RAG-1.7B` (публичный, 3.4 ГБ) и контроль — открытая

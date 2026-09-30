@@ -9,8 +9,9 @@ import json, os
 OUT = os.path.dirname(os.path.abspath(__file__))
 
 def nb(cells, gpu="T4"):
+    colab = {"gpuType": gpu, "provenance": []} if gpu != "CPU" else {"provenance": []}
     return {"nbformat": 4, "nbformat_minor": 5,
-            "metadata": {"accelerator": "GPU", "colab": {"gpuType": gpu, "provenance": []},
+            "metadata": {**({"accelerator": "GPU"} if gpu != "CPU" else {}), "colab": colab,
                          "kernelspec": {"name": "python3", "display_name": "Python 3"},
                          "language_info": {"name": "python"}},
             "cells": [{"cell_type": t, "metadata": {}, "source": src.strip("\n").splitlines(True),
@@ -1424,6 +1425,297 @@ print("окон:", stats["windows"], "· без разбора:", stats["empty"]
     ]
     return nb(cells, "A100")
 
+# =========================================================== analysis ========
+def analysis_nb():
+    cells = [
+("markdown", r"""
+# RETECO · все таблицы (CPU, GPU не нужен)
+
+Собирает всё, что лежит на Drive в `reteco/runs`, `reteco/gen`, `reteco/judge`:
+1. nDCG@10 и R@100 всех прогонов, dev и train
+2. гибриды BM25 × плотный (по баллам и RRF), вес — по train
+3. смешивание реранка с первой стадией 0.6 / 0.4 (как DIVER)
+4. бутстреп-интервалы разницы с BM25 + история (dev)
+5. разбивка по глубине реплики T1…T5+ и по доменам
+6. сабмит 2a из лучшего по train прогона + проверка `format_checker.py` кита
+7. генерация: 2b против 2c, 2c по достаточности, отказы, выдумки
+
+**Как запускать.** Любая среда (CPU хватает) → «Выполнить все». Минуты.
+
+**Что получится.** `reteco/analysis/*.csv` — таблицы для статьи;
+`reteco/runs/hyb_*`, `rrf_*`, `mix_*` — новые прогоны; `reteco/submission/2a/`.
+
+Ничего не подбирается на dev: веса гибридов и выбор сабмита — по train.
+"""),
+("code", r'''
+# ── 1. Настройки ─────────────────────────────────────────────────────────────
+BASE = "bm25_hist"        # с чем сравнивать в бутстрепе
+BM25_PART = "bm25_fuse3"  # BM25-половина гибридов
+MIX = (0.6, 0.4)          # реранк / первая стадия (DIVER), не подбирается
+SUBMIT = "auto"           # семейство прогонов для сабмита; auto — лучшее по train
+N_BOOT = 1000
+DRIVE = "/content/drive/MyDrive/reteco"
+'''),
+("code", r'''
+# ── 2. Drive и пакеты (GPU не нужен) ────────────────────────────────────────
+import os
+os.environ["HF_HUB_DISABLE_XET"] = "1"
+from google.colab import drive
+drive.mount("/content/drive")
+!pip -q install pytrec-eval-terrier
+!git clone -q https://github.com/DataScienceUIBK/RETECO /content/reteco_kit 2>/dev/null || true
+'''),
+("code", COMMON_DATA), ("code", COMMON_CODE),
+("code", r'''
+# ── 5. Все прогоны: nDCG@10 по репликам, макро по доменам, R@100 ───────────
+import csv, subprocess, sys
+from collections import defaultdict
+OUTA = f"{DRIVE}/analysis"
+os.makedirs(OUTA, exist_ok=True)
+QRELS = {}
+for s in ("dev", "train"):
+    for d in DOMAINS:
+        q = {}
+        for ln in open(f"{DATA}/{d}/qrels_{s}.txt"):
+            p = ln.split()
+            if len(p) == 4:
+                q.setdefault(p[0], {})[p[2]] = int(p[3])
+        QRELS[(d, s)] = q
+
+def split_of(name):
+    try:
+        return json.load(open(f"{RUNS}/{name}/config.json")).get("split") or re.search(r"_(dev|train)(?=_|$)", name).group(1)
+    except Exception:
+        m = re.search(r"_(dev|train)(?=_|$)", name)
+        return m.group(1) if m else None
+
+def family(name):
+    return re.sub(r"_(dev|train)(?=_|$)", "", name)
+
+def per_query(run, d, s):
+    """{qid: nDCG@10} по всем репликам qrels; реплика без прогона — 0."""
+    ev = pytrec_eval.RelevanceEvaluator(QRELS[(d, s)], {"ndcg_cut.10", "recall.100"}).evaluate(run)
+    return ({q: ev.get(q, {}).get("ndcg_cut_10", 0.0) for q in QRELS[(d, s)]},
+            {q: ev.get(q, {}).get("recall_100", 0.0) for q in QRELS[(d, s)]})
+
+RUN, NDCG, REC = {}, {}, {}
+for rd in sorted(glob.glob(f"{RUNS}/*/")):
+    name = os.path.basename(rd.rstrip("/"))
+    s = split_of(name)
+    if s not in ("dev", "train") or not all(os.path.exists(f"{rd}{d}/run.trec") for d in DOMAINS):
+        continue
+    RUN[name] = {d: read_run(f"{rd}{d}/run.trec") for d in DOMAINS}
+    NDCG[name], REC[name] = {}, {}
+    for d in DOMAINS:
+        NDCG[name][d], REC[name][d] = per_query(RUN[name][d], d, s)
+
+macro = lambda m, name: sum(sum(v.values()) / len(v) for v in m[name].values()) / len(DOMAINS)
+FAM = defaultdict(dict)
+for name in RUN:
+    FAM[family(name)][split_of(name)] = name
+
+def table():
+    rows = []
+    for f, sp in FAM.items():
+        r = {"run": f}
+        for s in ("dev", "train"):
+            r[f"ndcg_{s}"] = round(macro(NDCG, sp[s]), 4) if s in sp else None
+            r[f"r100_{s}"] = round(macro(REC, sp[s]), 4) if s in sp else None
+        rows.append(r)
+    return sorted(rows, key=lambda r: (-(r["ndcg_train"] or -1), -(r["ndcg_dev"] or -1)))
+
+def show(rows, cols, w=46):
+    print(f"{'прогон':<{w}}" + "".join(f"{c:>12}" for c in cols))
+    for r in rows:
+        print(f"{r['run'][:w - 1]:<{w}}" + "".join(f"{r[c]:>12.4f}" if isinstance(r[c], float) else f"{'—':>12}" for c in cols))
+
+def save(rows, name):
+    with open(f"{OUTA}/{name}.csv", "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=list(rows[0])); w.writeheader(); w.writerows(rows)
+
+rows = table()
+show(rows, ["ndcg_dev", "ndcg_train", "r100_dev"])
+save(rows, "runs")
+print(f"\n{len(RUN)} прогонов; сортировка по train. BM25 + история: dev 0.4379, train 0.4539")
+'''),
+("code", r'''
+# ── 6. Гибриды BM25 × плотный (вес по train) и смешивание реранка 0.6/0.4 ──
+def minmax_fuse(parts):
+    """parts: [(вес, {doc: балл})] → {doc: Σ вес·minmax(балл)}; нет в списке — 0 (как fuse.py)."""
+    s = defaultdict(float)
+    for w, r in parts:
+        if r:
+            lo, hi = min(r.values()), max(r.values())
+            for d, v in r.items():
+                s[d] += w * ((v - lo) / (hi - lo) if hi > lo else 1.0)
+    return dict(sorted(s.items(), key=lambda x: -x[1])[:100])
+
+def rrf_fuse(parts, k=60):
+    s = defaultdict(float)
+    for w, r in parts:
+        for i, (d, _) in enumerate(sorted(r.items(), key=lambda x: -x[1]), 1):
+            s[d] += w / (k + i)
+    return dict(sorted(s.items(), key=lambda x: -x[1])[:100])
+
+def fuse_runs(a, b, fn, wa, wb, s):
+    return {d: {q: fn([(wa, RUN[a][d].get(q, {})), (wb, RUN[b][d].get(q, {}))])
+                for q in QRELS[(d, s)]} for d in DOMAINS}
+
+def add_run(name, s, run, cfg):
+    for d in DOMAINS:
+        write_run(f"{RUNS}/{name}/{d}/run.trec", run[d], name[:20])
+    json.dump({**cfg, "split": s, "notebook": "analysis.ipynb"}, open(f"{RUNS}/{name}/config.json", "w"), indent=2)
+    RUN[name] = run
+    NDCG[name], REC[name] = {}, {}
+    for d in DOMAINS:
+        NDCG[name][d], REC[name][d] = per_query(run[d], d, s)
+    FAM[family(name)][s] = name
+
+hyb = []
+for f, sp in list(FAM.items()):
+    if not f.startswith("dense_") or "train" not in sp or "dev" not in sp or BM25_PART not in FAM:
+        continue
+    bm = FAM[BM25_PART]
+    grid = {}
+    for w in [i / 10 for i in range(11)]:
+        r = fuse_runs(sp["train"], bm["train"], minmax_fuse, w, 1 - w, "train")
+        grid[w] = np.mean([np.mean(list(per_query(r[d], d, "train")[0].values())) for d in DOMAINS])
+    w = max(grid, key=grid.get)
+    for s in ("train", "dev"):
+        add_run(f"hyb_{f}_{s}", s, fuse_runs(sp[s], bm[s], minmax_fuse, w, 1 - w, s),
+                {"dense": sp[s], "bm25": bm[s], "mode": "score", "w_dense": w})
+        add_run(f"rrf_{f}_{s}", s, fuse_runs(sp[s], bm[s], rrf_fuse, 1, 1, s),
+                {"dense": sp[s], "bm25": bm[s], "mode": "rrf"})
+    hyb.append((f, w))
+    print(f"гибрид {f} × {BM25_PART}: вес плотного по train {w:.1f}")
+
+for name in list(RUN):
+    try:
+        cfg = json.load(open(f"{RUNS}/{name}/config.json"))
+    except Exception:
+        continue
+    fs = cfg.get("first_stage")
+    if not fs or fs not in RUN or name.startswith("mix_"):
+        continue
+    s = split_of(name)
+    add_run(f"mix_{name}", s, fuse_runs(name, fs, minmax_fuse, MIX[0], MIX[1], s),
+            {"rerank": name, "first_stage": fs, "weights": MIX})
+    print(f"смешивание {name} {MIX[0]}/{MIX[1]} с {fs}: {macro(NDCG, name):.4f} → {macro(NDCG, f'mix_{name}'):.4f}")
+rows = table()
+save(rows, "runs")
+show([r for r in rows if r["run"].startswith(("hyb_", "rrf_", "mix_"))], ["ndcg_dev", "ndcg_train"])
+'''),
+("code", r'''
+# ── 7. Бутстреп: разница с BASE на dev, 95% интервал и доля «не лучше» ──────
+rng = np.random.default_rng(0)
+base = FAM[BASE]["dev"]
+res = []
+for f, sp in FAM.items():
+    if "dev" not in sp or sp["dev"] == base:
+        continue
+    diffs = np.zeros(N_BOOT)
+    for d in DOMAINS:
+        qs = sorted(QRELS[(d, "dev")])
+        a = np.array([NDCG[sp["dev"]][d][q] for q in qs]); b = np.array([NDCG[base][d][q] for q in qs])
+        idx = rng.integers(0, len(qs), size=(N_BOOT, len(qs)))
+        diffs += (a[idx] - b[idx]).mean(1) / len(DOMAINS)
+    res.append({"run": f, "delta": round(macro(NDCG, sp["dev"]) - macro(NDCG, base), 4),
+                "ci_lo": round(float(np.percentile(diffs, 2.5)), 4), "ci_hi": round(float(np.percentile(diffs, 97.5)), 4),
+                "p_le0": round(float((diffs <= 0).mean()), 4)})
+res.sort(key=lambda r: -r["delta"])
+save(res, "bootstrap_dev")
+print(f"{'прогон':<46}{'Δ':>9}{'95% ДИ':>20}{'p(Δ≤0)':>9}")
+for r in res:
+    print(f"{r['run'][:45]:<46}{r['delta']:>+9.4f}   [{r['ci_lo']:+.4f}, {r['ci_hi']:+.4f}]{r['p_le0']:>9.3f}")
+'''),
+("code", r'''
+# ── 8. Глубина реплики T1…T5+ и домены (dev) для BASE и пяти лучших по train ──
+top = [r["run"] for r in table() if r["ndcg_train"] is not None and "dev" in FAM[r["run"]]][:5]
+show_runs = [BASE] + [f for f in top if f != BASE]
+depth = lambda q: min(int(re.search(r"_turn_(\d+)$", q).group(1)), 5)
+rows_t, rows_d = [], []
+for f in show_runs:
+    name = FAM[f]["dev"]
+    by = defaultdict(list)
+    for d in DOMAINS:
+        for q, v in NDCG[name][d].items():
+            by[depth(q)].append(v)
+    rows_t.append({"run": f, **{("T5+" if t == 5 else f"T{t}"): round(float(np.mean(by[t])), 4) for t in sorted(by)},
+                   **{f"n_T{t}": len(by[t]) for t in sorted(by)}})
+    rows_d.append({"run": f, **{d: round(float(np.mean(list(NDCG[name][d].values()))), 4) for d in DOMAINS}})
+save(rows_t, "depth_dev"); save(rows_d, "domains_dev")
+cols_t = [c for c in rows_t[0] if c.startswith("T")]
+show(rows_t, cols_t)
+print()
+show(rows_d, DOMAINS[:6]); print(); show(rows_d, DOMAINS[6:])
+'''),
+("code", r'''
+# ── 9. Сабмит 2a: лучшее по train семейство, dev-прогон, проверка кита ─────
+if SUBMIT == "auto":
+    SUBMIT = next(r["run"] for r in table() if r["ndcg_train"] is not None and "dev" in FAM[r["run"]])
+name = FAM[SUBMIT]["dev"]
+out = f"{DRIVE}/submission/2a"
+os.makedirs(out, exist_ok=True)
+ok = True
+for d in DOMAINS:
+    path = f"{out}/{d}.trec"
+    write_run(path, RUN[name][d], "airi_reteco")
+    r = subprocess.run([sys.executable, "/content/reteco_kit/starter_kit/format_checker.py", path,
+                        "--qrels", f"{DATA}/{d}/qrels_dev.txt", "--corpus", f"{DATA}/{d}/documents.jsonl",
+                        "--doc-key", "doc_id"], capture_output=True, text=True)
+    ok &= r.returncode == 0
+    msg = ((r.stdout + r.stderr).strip().splitlines() or ["—"])[-1]
+    print(f"  {d:<20} {'OK' if r.returncode == 0 else 'ОШИБКА'}  {msg[:90]}")
+print(f"\nсабмит из {name} (dev nDCG {macro(NDCG, name):.4f}) → {out}:", "формат в порядке" if ok else "ЕСТЬ ОШИБКИ")
+'''),
+("code", r'''
+# ── 10. Генерация: 2b против 2c, достаточность, отказы, выдумки ─────────────
+gen = sorted(glob.glob(f"{DRIVE}/gen/*.jsonl"))
+if not gen:
+    print("нет reteco/gen — сначала generate.ipynb")
+else:
+    from sklearn.metrics import roc_auc_score
+    J = {}
+    for p in glob.glob(f"{DRIVE}/judge/*/*.jsonl"):
+        for r in map(json.loads, open(p, encoding="utf-8")):
+            if r.get("ok"):
+                J[(p.split("/")[-2], os.path.basename(p), r["domain"], r["topic_id"])] = r
+    judges = sorted({k[0] for k in J})
+    rows = []
+    for p in gen:
+        rs = [json.loads(l) for l in open(p, encoding="utf-8")]
+        for suff in ("все", "all", "part", "none"):
+            g = rs if suff == "все" else [r for r in rs if r["suff"] == suff]
+            if not g or (suff != "все" and rs[0]["mode"] == "2b"):
+                continue
+            row = {"file": os.path.basename(p)[:-6], "suff": suff, "n": len(g),
+                   "refused": round(sum(r["status"].startswith("UN") for r in g) / len(g), 3),
+                   "p_ans": round(float(np.mean([r["p_answerable"] for r in g if r["p_answerable"] is not None] or [np.nan])), 3)}
+            ab = [r for r in g if r["suff"] in ("all", "none") and r["p_answerable"] is not None]
+            row["auroc"] = (round(roc_auc_score([r["suff"] == "all" for r in ab], [r["p_answerable"] for r in ab]), 3)
+                            if len({r["suff"] for r in ab}) == 2 else None)
+            for jn in judges:
+                js = [J[k] for r in g if (k := (jn, os.path.basename(p), r["domain"], r["topic_id"])) in J]
+                if js:
+                    row[f"{jn}:correct"] = round(float(np.mean([x["correctness"] for x in js])), 3)
+                    row[f"{jn}:faithful"] = round(float(np.mean([x["faithfulness"] for x in js])), 3)
+                    row[f"{jn}:unsupported"] = round(float(np.mean([x["unsupported_claims"] for x in js])), 3)
+            rows.append(row)
+    keys = []
+    for r in rows:
+        keys += [k for k in r if k not in keys]
+    rows = [{k: r.get(k) for k in keys} for r in rows]
+    save(rows, "generation")
+    print(f"{'файл':<42}{'дост.':>6}{'n':>5}{'отказ':>7}{'p_ans':>7}{'AUROC':>7}" + "".join(f"{j[:10] + ':corr':>16}" for j in judges))
+    for r in rows:
+        print(f"{r['file'][:41]:<42}{r['suff']:>6}{r['n']:>5}{r['refused']:>7.2f}{r['p_ans']:>7.2f}"
+              f"{(r['auroc'] if r['auroc'] is not None else float('nan')):>7.3f}"
+              + "".join(f"{r.get(f'{j}:correct') or float('nan'):>16.2f}" for j in judges))
+print("\nВсе таблицы:", OUTA)
+'''),
+    ]
+    return nb(cells, "CPU")
+
 json.dump(embed_nb("AQ-MedAI/Diver-Retriever-4B", "Diver-Retriever-4B",
                    "Модель: рассуждающий эмбеддер на базе Qwen3-Embedding-4B. На RECOR у авторов "
                    "бенчмарка 0.545 против 0.446 у BM25 (с историей)."),
@@ -1437,4 +1729,5 @@ json.dump(generate_nb(), open(f"{OUT}/generate.ipynb", "w"), ensure_ascii=False,
 json.dump(judge_nb(), open(f"{OUT}/judge.ipynb", "w"), ensure_ascii=False, indent=1)
 json.dump(query_nb(), open(f"{OUT}/query.ipynb", "w"), ensure_ascii=False, indent=1)
 json.dump(llm_rerank_nb(), open(f"{OUT}/llm_rerank.ipynb", "w"), ensure_ascii=False, indent=1)
+json.dump(analysis_nb(), open(f"{OUT}/analysis.ipynb", "w"), ensure_ascii=False, indent=1)
 print("записано:", sorted(os.listdir(OUT)))
