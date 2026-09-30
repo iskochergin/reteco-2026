@@ -1002,6 +1002,295 @@ print("\nвыдум — доля ответов с утверждениями б
     ]
     return nb(cells, "A100")
 
+# ============================================================== query ========
+def query_nb():
+    cells = [
+("markdown", r"""
+# RETECO · блок «Запрос» на открытой LLM + BM25 кита
+
+Достраивает варианты запроса, которых не было в прогоне Claude, и расширение с
+обратной связью, как у DIVER. Всё ищется **официальным BM25 кита** (gensim +
+анализатор Lucene), поэтому числа прямо сравнимы с таблицей: первая ячейка поиска
+проверяет, что BM25 + история даёт на dev ровно 0.4379 по доменам.
+
+Варианты (всё приклеивается к «реплика + история», как q2d у Claude):
+- `win1`, `win2` — только последние 1–2 пары истории вместо всей (без LLM)
+- `stepback` — более общий вопрос над исходным
+- `subq` — 2–3 подвопроса; каждым ищется отдельно, списки сливаются RRF
+- `re` — последний ответ ассистента переписан самодостаточным
+- `q2d_open` — гипотетический абзац открытой модели (тот же q2d, что у Claude)
+- `kw` — 30 ключевых слов из этого абзаца, которых нет в запросе
+- `qexp1`, `qexp2` — расширение с обратной связью (DIVER QExpand): модель видит
+  топ-5 найденного и переписывает абзац; в запросе остаётся реплика + история +
+  последнее расширение
+
+**Как запускать.** Среда → **A100** (Qwen3-8B) или **L4** (Qwen3-4B-Instruct-2507).
+«Выполнить все». Если ячейка 2 попросит перезапуск — Перезапустить сеанс и снова
+«Выполнить все». Оборвалось — ещё раз: ответы LLM и готовые прогоны на Drive.
+
+**Сколько.** ≈3 тыс. реплик dev + train. LLM ≈17 тыс. коротких генераций —
+15–30 мин на A100; BM25: индекс 10–15 мин, поиск ещё 10–20.
+
+**Что получится.**
+- `reteco/queries/<вариант>/<сплит>.jsonl` — тексты запросов (их потом подхватят
+  `diver` и `reason_embed`: там они считаются за минуты)
+- `reteco/runs/bm25_<вариант>_<сплит>/` — прогоны
+- `reteco/qgen/<модель>/` — сырые ответы LLM (кэш)
+
+**Потом.** Скачать `reteco/runs` и `reteco/queries` в проект, сказать Claude.
+Варианты выбираются по train, dev — только отчёт.
+"""),
+("code", r'''
+# ── 1. Настройки ─────────────────────────────────────────────────────────────
+LLM_MODEL = "auto"    # A100 → Qwen/Qwen3-8B, иначе Qwen/Qwen3-4B-Instruct-2507
+SPLITS = ["dev", "train"]
+FEEDBACK_K = 5        # сколько найденных документов видит LLM в QExpand
+DOC_WORDS = 300       # документ в промпте обрезается до стольких слов
+N_KW = 30             # ключевых слов в варианте kw
+MAXLEN = 8192
+MAX_NEW = 256
+TOPK = 100
+DRIVE = "/content/drive/MyDrive/reteco"
+'''),
+("code", LLM_SETUP),
+("code", r'''
+# ── 2b. Java 21, pyserini (только анализатор Lucene), gensim, кит организаторов ──
+# pyserini ставится без зависимостей: от него нужен только анализатор, а его
+# полные зависимости (torch, transformers) сломали бы vLLM.
+import glob
+!apt-get -qq update > /dev/null && apt-get -qq install -y openjdk-21-jdk-headless > /dev/null
+!pip -q install --no-deps pyserini==2.4.0
+!pip -q install pyjnius gensim
+!git clone -q https://github.com/DataScienceUIBK/RETECO /content/reteco_kit 2>/dev/null || true
+jdk = (glob.glob("/usr/lib/jvm/java-21-openjdk*") or [""])[0]
+os.environ.setdefault("JAVA_HOME", jdk)
+os.environ.setdefault("JVM_PATH", f"{jdk}/lib/server/libjvm.so")
+sys.path.insert(0, "/content/reteco_kit/starter_kit")
+print("JAVA_HOME", os.environ["JAVA_HOME"])
+'''),
+("code", COMMON_DATA), ("code", COMMON_CODE),
+("code", r'''
+# ── 5. LLM (грузится до Java: vLLM запускает свой процесс, JVM ему не нужна) ──
+from vllm import SamplingParams
+if LLM_MODEL == "auto":
+    LLM_MODEL = "Qwen/Qwen3-8B" if BIG else "Qwen/Qwen3-4B-Instruct-2507"
+llm = load_llm(LLM_MODEL, MAXLEN)
+tok = llm.get_tokenizer()
+SP = SamplingParams(temperature=0.0, max_tokens=MAX_NEW)
+SHORT = LLM_MODEL.split("/")[-1]
+QGEN = f"{DRIVE}/qgen/{SHORT}"
+os.makedirs(QGEN, exist_ok=True)
+SYSTEM = "You help a search engine find documents that answer the latest question in a conversation."
+
+def ask(kind, split, items):
+    """items: [(ключ, промпт)] → {ключ: ответ}. Кэш на Drive: qgen/<модель>/<kind>_<split>.jsonl."""
+    path = f"{QGEN}/{kind}_{split}.jsonl"
+    got = {}
+    if os.path.exists(path):
+        got = {tuple(r["key"]): r["out"] for r in map(json.loads, open(path, encoding="utf-8"))}
+    todo = [(k, p) for k, p in items if k not in got]
+    if todo:
+        t0 = time.time()
+        outs = llm.generate([chat(tok, [{"role": "system", "content": SYSTEM}, {"role": "user", "content": p}])
+                             for _, p in todo], SP, use_tqdm=False)
+        with open(path, "a", encoding="utf-8") as f:
+            for (k, _), o in zip(todo, outs):
+                got[k] = o.outputs[0].text.strip()
+                f.write(json.dumps({"key": list(k), "out": got[k]}, ensure_ascii=False) + "\n")
+        print(f"  LLM {kind} {split}: {len(todo)} за {(time.time() - t0) / 60:.1f} мин")
+    return got
+print("LLM:", LLM_MODEL)
+'''),
+("code", r'''
+# ── 6. BM25 кита + проверка: BM25 + история на dev = таблица организаторов ──
+from official_baseline import OfficialBM25
+from pyserini.analysis import Analyzer, get_lucene_analyzer
+AN = Analyzer(get_lucene_analyzer())
+_BM = {}
+
+def bm25(dom):
+    if dom not in _BM:
+        ids, texts = load_corpus(dom)
+        _BM[dom] = OfficialBM25(texts, ids)
+    return _BM[dom]
+
+def search(dom, qids, texts):
+    """То же, что OfficialBM25.search, но топ берётся numpy (устойчивая сортировка —
+    равные баллы в порядке корпуса, как в ките) и сразу обрезается до TOPK."""
+    b = bm25(dom)
+    ids = b.doc_ids
+    run = {}
+    for q, t in zip(qids, texts):
+        sims = np.asarray(b.index[b.model[b.dictionary.doc2bow(b.analyzer.analyze(t))]])
+        top = np.argsort(-sims, kind="stable")[:TOPK]
+        run[q] = {ids[i]: float(sims[i]) for i in top}
+    return run
+
+t0 = time.time()
+for dom in DOMAINS:
+    qids, qtexts = topics(dom, "dev", "hist")
+    got = ndcg10(search(dom, qids, qtexts), dom, "dev")
+    print(f"  {dom:<20} {got:.4f}  таблица {BM25_DEV[dom]:.4f}  · {(time.time() - t0) / 60:.1f} мин")
+    assert abs(got - BM25_DEV[dom]) < 0.0015, "BM25 не совпал с официальным — дальше не считать"
+print("BM25 совпадает с официальным")
+'''),
+("code", r'''
+# ── 7. Реплики и промпты ─────────────────────────────────────────────────────
+NO_HIST = "No previous conversation."
+
+def load_turns(split):
+    """Те же реплики, что topics(): только с золотом. h — conversation_history как есть,
+    prev — прошлые пары (вопрос, ответ) диалога. Золото и ответ текущей реплики не берутся."""
+    out = []
+    for dom in DOMAINS:
+        for c in json.load(open(f"{DATA}/{dom}/benchmark_{split}.json", encoding="utf-8")):
+            prev = []
+            for t in c["turns"]:
+                if t.get("gold_doc_ids") or t.get("supporting_doc_ids"):
+                    h = t.get("conversation_history", "")
+                    out.append({"key": (dom, f"{c['id']}_turn_{t['turn_id']}"), "q": t["query"],
+                                "h": "" if h == NO_HIST else h, "prev": list(prev)})
+                prev.append((t["query"], t["answer"]))
+    return out
+
+def with_hist(q, h):
+    return q + (f"\n\nConversation History:\n{h}" if h else "")
+
+def pairs(prev):
+    return "\n".join(f"Q: {q}\nA: {a}" for q, a in prev)
+
+def conv(t):
+    return f"Conversation so far:\n{t['h'] or '(none)'}\n\nLatest question: {t['q']}"
+
+P_STEPBACK = ("{c}\n\nWrite one more general step-back question about the underlying concept or principle "
+              "that must be understood to answer the latest question. Output only that question.")
+P_SUBQ = ("{c}\n\nBreak the latest question into 2-3 simple sub-questions that are self-contained search "
+          "queries (resolve every reference to the conversation). Output one per line, nothing else.")
+P_RE = ("In a conversation, the user asked: {q}\n\nThe assistant answered:\n{a}\n\nRewrite this last answer so "
+        "it is fully self-contained: replace pronouns and references with what they mean. Output only the rewritten answer.")
+P_PASSAGE = ("{c}\n\nWrite a short encyclopedic passage (60-100 words) that answers the latest question. "
+             "Output only the passage.")
+P_REFINE = ("{c}\n\nA search engine returned these passages; some may be irrelevant:\n{docs}\n\nUsing the useful "
+            "information in them and your own knowledge, write a correct encyclopedic passage (60-100 words) that "
+            "answers the latest question. Output only the passage.")
+
+def keywords(passage, base, n=N_KW):
+    """Слова абзаца, чьих основ (анализатор Lucene) нет в запросе; топ-n по частоте,
+    при равенстве — по первому появлению."""
+    have = set(AN.analyze(base))
+    cnt, form = {}, {}
+    for w in re.findall(r"[A-Za-z][A-Za-z0-9-]+", passage):
+        st = AN.analyze(w)
+        if len(st) != 1 or st[0] in have:
+            continue
+        cnt[st[0]] = cnt.get(st[0], 0) + 1
+        form.setdefault(st[0], w.lower())
+    return " ".join(form[s] for s in sorted(cnt, key=lambda s: -cnt[s])[:n])
+
+def rrf(runs, k=60):
+    s = {}
+    for run in runs:
+        for r, (d, _) in enumerate(sorted(run.items(), key=lambda x: -x[1]), 1):
+            s[d] = s.get(d, 0) + 1 / (k + r)
+    return dict(sorted(s.items(), key=lambda x: -x[1])[:TOPK])
+'''),
+("code", r'''
+# ── 8. Варианты: тексты → Drive/reteco/queries, BM25 → Drive/reteco/runs ────
+TEXTS = {}      # (вариант, split) → {ключ: [тексты]}; несколько текстов сливаются RRF
+
+def save_variant(name, split, texts):
+    """texts: {ключ: [текст, ...]}. В queries пишется один текст (склейка) — для плотных
+    ноутбуков; BM25 ищет каждым текстом отдельно и сливает RRF."""
+    TEXTS[(name, split)] = texts
+    d = f"{QUERIES}/{name}"
+    os.makedirs(d, exist_ok=True)
+    with open(f"{d}/{split}.jsonl.tmp", "w", encoding="utf-8") as f:
+        for (dom, qid), ts in texts.items():
+            f.write(json.dumps({"domain": dom, "topic_id": qid, "text": "\n\n".join(ts)}, ensure_ascii=False) + "\n")
+    os.replace(f"{d}/{split}.jsonl.tmp", f"{d}/{split}.jsonl")
+    json.dump({"llm": LLM_MODEL, "notebook": "query.ipynb"}, open(f"{d}/config.json", "w"))
+
+def run_variant(name, split):
+    rd = f"{RUNS}/bm25_{name}_{split}"
+    texts = TEXTS[(name, split)]
+    for dom in DOMAINS:
+        path = f"{rd}/{dom}/run.trec"
+        if os.path.exists(path):
+            continue
+        items = [(qid, ts) for (d, qid), ts in texts.items() if d == dom]
+        n = max(len(ts) for _, ts in items)
+        runs = [search(dom, [q for q, ts in items if len(ts) > i], [ts[i] for _, ts in items if len(ts) > i])
+                for i in range(n)]
+        run = {q: (rrf([r[q] for r in runs if q in r]) if len(ts) > 1 else runs[0][q]) for q, ts in items}
+        write_run(path, run, f"bm25_{name}")
+    json.dump({"variant": name, "split": split, "llm": LLM_MODEL, "bm25": "kit OfficialBM25 k1=0.9 b=0.4",
+               "topk": TOPK, "date": time.strftime("%Y-%m-%dT%H:%M:%S")}, open(f"{rd}/config.json", "w"), indent=2)
+    return rd
+
+def top_texts(rd, split, turns, k=FEEDBACK_K):
+    """Тексты топ-k прогона для каждой реплики — это видит LLM в QExpand (без doc_id)."""
+    out = {}
+    for dom in DOMAINS:
+        ids, docs = load_corpus(dom)
+        text = dict(zip(ids, docs))
+        run = read_run(f"{rd}/{dom}/run.trec")
+        for t in turns:
+            if t["key"][0] == dom:
+                top = sorted(run.get(t["key"][1], {}).items(), key=lambda x: -x[1])[:k]
+                out[t["key"]] = [" ".join(text[d].split()[:DOC_WORDS]) for d, _ in top]
+    return out
+
+def refine_prompts(turns, tops):
+    return [(t["key"], P_REFINE.format(c=conv(t), docs="\n\n".join(f"[{i}] {d}" for i, d in enumerate(tops[t["key"]], 1))))
+            for t in turns]
+
+for split in SPLITS:
+    turns = load_turns(split)
+    base = {t["key"]: with_hist(t["q"], t["h"]) for t in turns}
+    later = [t for t in turns if t["prev"]]
+    sb = ask("stepback", split, [(t["key"], P_STEPBACK.format(c=conv(t))) for t in turns])
+    sq = ask("subq", split, [(t["key"], P_SUBQ.format(c=conv(t))) for t in turns])
+    re_ = ask("re", split, [(t["key"], P_RE.format(q=t["prev"][-1][0], a=t["prev"][-1][1])) for t in later])
+    ps = ask("passage", split, [(t["key"], P_PASSAGE.format(c=conv(t))) for t in turns])
+    subqs = lambda k: [re.sub(r"^\s*(\d+[.)]|[-*•])\s*", "", l).strip() for l in sq[k].splitlines() if l.strip()][:3]
+    save_variant("win1", split, {t["key"]: [with_hist(t["q"], pairs(t["prev"][-1:]))] for t in turns})
+    save_variant("win2", split, {t["key"]: [with_hist(t["q"], pairs(t["prev"][-2:]))] for t in turns})
+    save_variant("stepback", split, {k: [f"{b}\n\n{sb[k]}"] for k, b in base.items()})
+    save_variant("subq", split, {k: [b] + subqs(k) for k, b in base.items()})
+    save_variant("re", split, {t["key"]: [with_hist(t["q"], pairs(t["prev"][:-1] + [(t["prev"][-1][0], re_[t["key"]])]))
+                                          if t["prev"] else t["q"]] for t in turns})
+    save_variant("q2d_open", split, {k: [f"{b}\n\n{ps[k]}"] for k, b in base.items()})
+    save_variant("kw", split, {k: [f"{b}\n\n{keywords(ps[k], b)}"] for k, b in base.items()})
+    for name in ["win1", "win2", "stepback", "subq", "re", "q2d_open", "kw"]:
+        run_variant(name, split)
+    print(f"{split}: разовые варианты готовы")
+    # QExpand: абзац → поиск → LLM видит топ-5 и переписывает → поиск → ещё раз
+    prev_run = f"{RUNS}/bm25_q2d_open_{split}"
+    for r in (1, 2):
+        ex = ask(f"refine{r}", split, refine_prompts(turns, top_texts(prev_run, split, turns)))
+        save_variant(f"qexp{r}", split, {k: [f"{b}\n\n{ex[k]}"] for k, b in base.items()})
+        prev_run = run_variant(f"qexp{r}", split)
+    print(f"{split}: QExpand готов")
+'''),
+("code", r'''
+# ── 9. Итог: nDCG@10 макро по доменам ───────────────────────────────────────
+REF = {"bm25_hist": BM25_MACRO, "bm25_q2d (Claude)": {"dev": 0.5463, "train": 0.5584}}
+names = ["win1", "win2", "stepback", "subq", "re", "q2d_open", "kw", "qexp1", "qexp2"]
+print(f"{'вариант':<22}" + "".join(f"{s:>9}" for s in SPLITS))
+for n, v in REF.items():
+    print(f"{n:<22}" + "".join(f"{v[s]:>9.4f}" for s in SPLITS))
+for n in names:
+    row = []
+    for s in SPLITS:
+        rd = f"{RUNS}/bm25_{n}_{s}"
+        ok = all(os.path.exists(f"{rd}/{d}/run.trec") for d in DOMAINS)
+        row.append(sum(ndcg10(read_run(f"{rd}/{d}/run.trec"), d, s) for d in DOMAINS) / len(DOMAINS) if ok else float("nan"))
+    print(f"{n:<22}" + "".join(f"{x:>9.4f}" for x in row))
+print("\nВыбирать по train. Дальше: скачать", RUNS, "и", QUERIES, "в проект, сказать Claude.")
+'''),
+    ]
+    return nb(cells, "A100")
+
 json.dump(embed_nb("AQ-MedAI/Diver-Retriever-4B", "Diver-Retriever-4B",
                    "Модель: рассуждающий эмбеддер на базе Qwen3-Embedding-4B. На RECOR у авторов "
                    "бенчмарка 0.545 против 0.446 у BM25 (с историей)."),
@@ -1013,4 +1302,5 @@ json.dump(embed_nb("hanhainebula/reason-embed-qwen3-4b-0928", "reason-embed-qwen
 json.dump(rerank_nb(), open(f"{OUT}/rerank.ipynb", "w"), ensure_ascii=False, indent=1)
 json.dump(generate_nb(), open(f"{OUT}/generate.ipynb", "w"), ensure_ascii=False, indent=1)
 json.dump(judge_nb(), open(f"{OUT}/judge.ipynb", "w"), ensure_ascii=False, indent=1)
+json.dump(query_nb(), open(f"{OUT}/query.ipynb", "w"), ensure_ascii=False, indent=1)
 print("записано:", sorted(os.listdir(OUT)))
