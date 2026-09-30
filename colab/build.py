@@ -1291,6 +1291,139 @@ print("\nВыбирать по train. Дальше: скачать", RUNS, "и",
     ]
     return nb(cells, "A100")
 
+# ========================================================= llm_rerank ========
+def llm_rerank_nb():
+    cells = [
+("markdown", r"""
+# RETECO · listwise-реранк LLM (RankGPT / ReasonRank)
+
+Модель видит сразу 20 кандидатов (только тексты, без `doc_id`) и выдаёт их
+порядок `[3] > [1] > …`. Скользящее окно 20 / шаг 10 снизу вверх, как в RankGPT
+и ReasonRank; при `TOPK = 20` это одно окно.
+
+Модели: A100 — `liuwenhan/reasonrank-7B` (обучен ровно на это, сначала
+рассуждает в `<think>`, потом `<answer>`); L4/T4 — Qwen3-4B-Instruct-2507 с
+промптом RankGPT. Промпт ReasonRank взят дословно из их кода
+(`listwise_prompt_r1.toml`, `add_prefix_prompt`, `add_post_prompt`).
+
+**Как запускать.** Прогон первой стадии должен лежать на Drive в
+`reteco/runs/<FIRST_STAGE>/`. Среда **A100** → «Выполнить все». Оборвалось —
+ещё раз, готовые домены пропускаются.
+
+**Сколько.** 858 реплик × 1 окно: reasonrank-7B на A100 ≈ 10–20 мин;
+`TOPK = 100` (9 окон) — около часа.
+
+**Что получится.** `reteco/runs/llmrr_<модель>_<первая стадия>_<запрос>/`.
+Смешивание с первой стадией 0.6 / 0.4 — в `analysis.ipynb`.
+"""),
+("code", r'''
+# ── 1. Настройки ─────────────────────────────────────────────────────────────
+MODEL = "auto"        # A100 → liuwenhan/reasonrank-7B, иначе Qwen/Qwen3-4B-Instruct-2507
+FIRST_STAGE = "bm25_fuse3_dev"   # папка в Drive/reteco/runs
+QUERY_SET = "qd"      # что видит модель как запрос: "qd" — самостоятельный вопрос Claude,
+                      # "hist" — реплика + история, как у организаторов; или папка в queries
+SPLIT = "dev"
+TOPK, WINDOW, STEP = 20, 20, 10
+PASSAGE_TOKENS = 300  # документ обрезается до стольких токенов
+MAXLEN = 16384
+DRIVE = "/content/drive/MyDrive/reteco"
+'''),
+("code", LLM_SETUP), ("code", COMMON_DATA), ("code", COMMON_CODE),
+("code", r'''
+# ── 5. Модель и промпт (ReasonRank: rank_GPT_reasoning; прочие: rank_GPT) ────
+from vllm import SamplingParams
+if MODEL == "auto":
+    MODEL = "liuwenhan/reasonrank-7B" if BIG else "Qwen/Qwen3-4B-Instruct-2507"
+REASON = "reasonrank" in MODEL.lower()
+llm = load_llm(MODEL, MAXLEN)
+tok = llm.get_tokenizer()
+SP = SamplingParams(temperature=0.0, max_tokens=3072 + 100 if REASON else 300)   # 3072 — reasoning_maxlen у ReasonRank
+SYS = ("You are RankLLM, an intelligent assistant that can rank passages based on their relevance to the query."
+       + (" Given a query and a passage list, you first thinks about the reasoning process in the mind and then "
+          "provides the answer (i.e., the reranked passage list). The reasoning process and answer are enclosed "
+          "within <think> </think> and <answer> </answer> tags, respectively, i.e., <think> reasoning process "
+          "here </think> <answer> answer here </answer>." if REASON else ""))
+num_fix = lambda s: re.sub(r"\[(\d+)\]", r"(\1)", s)     # [n] в тексте спутал бы номера кандидатов
+
+def passage(text):
+    return num_fix(tok.convert_tokens_to_string(tok.tokenize(text.strip())[:PASSAGE_TOKENS]))
+
+def prompt(query, docs):
+    q, n = num_fix(query).strip(), len(docs)
+    body = (f"I will provide you with {n} passages, each indicated by a numerical identifier []. "
+            f"Rank the passages based on their relevance to the search query: {q}.\n\n")
+    body += "".join(f"[{i}] {d}\n" for i, d in enumerate(docs, 1))
+    body += (f"Search Query: {q}.\nRank the {n} passages above based on their relevance to the search query. "
+             "All the passages should be included and listed using identifiers, in descending order of relevance. ")
+    body += ("The format of the answer should be [] > [], e.g., [2] > [1]." if REASON else
+             "The output format should be [] > [], e.g., [2] > [1]. Only respond with the ranking results, "
+             "do not say any word or explain.")
+    return chat(tok, [{"role": "system", "content": SYS}, {"role": "user", "content": body}])
+
+def permutation(text, n):
+    """Порядок 0..n-1 из ответа: сначала названные номера без повторов, потом забытые
+    в исходном порядке (как _clean_response в rank_llm)."""
+    m = re.search(r"<answer>(.*?)(?:</answer>|$)", text, re.S)
+    body = m.group(1) if m else text.split("</think>")[-1]
+    seen = []
+    for x in re.findall(r"\[(\d+)\]", body) or re.findall(r"\d+", body):
+        i = int(x) - 1
+        if 0 <= i < n and i not in seen:
+            seen.append(i)
+    return seen + [i for i in range(n) if i not in seen], len(seen)
+print(MODEL, "· рассуждает" if REASON else "· RankGPT")
+'''),
+("code", r'''
+# ── 6. Реранк по доменам → Drive ────────────────────────────────────────────
+src = f"{RUNS}/{FIRST_STAGE}"
+assert os.path.isdir(src), f"нет прогона первой стадии {src}"
+dst = f"{RUNS}/llmrr_{MODEL.split('/')[-1]}_{FIRST_STAGE}_{QUERY_SET}"
+stats = {"windows": 0, "empty": 0, "partial": 0, "cut": 0}
+rows = []
+for dom in DOMAINS:
+    path = f"{dst}/{dom}/run.trec"
+    first = read_run(f"{src}/{dom}/run.trec")
+    if not os.path.exists(path):
+        ids, texts = load_corpus(dom)
+        text = dict(zip(ids, texts))
+        qids, qtexts = topics(dom, SPLIT, QUERY_SET)
+        qtext = dict(zip(qids, qtexts))
+        order = {q: [d for d, _ in sorted(first.get(q, {}).items(), key=lambda x: -x[1])] for q in qids}
+        t0 = time.time()
+        end = min(TOPK, max(len(v) for v in order.values()))
+        start = end - WINDOW
+        while end > 0 and start + STEP != 0:        # окна снизу вверх, как sliding_windows в rank_llm
+            start = max(start, 0)
+            live = [q for q in qids if len(order[q][start:end]) > 1]
+            outs = llm.generate([prompt(qtext[q], [passage(text[d]) for d in order[q][start:end]]) for q in live],
+                                SP, use_tqdm=False)
+            for q, o in zip(live, outs):
+                win = order[q][start:end]
+                perm, named = permutation(o.outputs[0].text, len(win))
+                order[q][start:end] = [win[i] for i in perm]
+                stats["windows"] += 1
+                stats["empty"] += named == 0
+                stats["partial"] += 0 < named < len(win)
+                stats["cut"] += o.outputs[0].finish_reason == "length"
+            end, start = end - STEP, start - STEP
+        run = {q: {d: (len(v) - r) / len(v) for r, d in enumerate(v)} for q, v in order.items() if v}
+        write_run(path, run, "llmrr")
+        print(f"{dom}: {len(qids)} реплик за {(time.time() - t0) / 60:.1f} мин")
+    a, b = ndcg10(first, dom, SPLIT), ndcg10(read_run(path), dom, SPLIT)
+    rows.append((a, b))
+    print(f"  {dom:<20} первая стадия {a:.4f} → LLM-реранк {b:.4f}  ({b - a:+.4f})")
+json.dump({"model": MODEL, "first_stage": FIRST_STAGE, "query_set": QUERY_SET, "split": SPLIT, "topk": TOPK,
+           "window": WINDOW, "step": STEP, "passage_tokens": PASSAGE_TOKENS, "prompt": "rank_GPT_reasoning" if REASON
+           else "rank_GPT", "stats": stats, "gpu": torch.cuda.get_device_name(0),
+           "date": time.strftime("%Y-%m-%dT%H:%M:%S")}, open(f"{dst}/config.json", "w"), ensure_ascii=False, indent=2)
+A, B = (sum(r[i] for r in rows) / len(rows) for i in (0, 1))
+print(f"\nМАКРО  первая стадия {A:.4f} → LLM-реранк {B:.4f}  ({B - A:+.4f})")
+print("окон:", stats["windows"], "· без разбора:", stats["empty"], "· неполных:", stats["partial"],
+      "· обрезано по длине:", stats["cut"], "(эти числа — только за этот запуск)")
+'''),
+    ]
+    return nb(cells, "A100")
+
 json.dump(embed_nb("AQ-MedAI/Diver-Retriever-4B", "Diver-Retriever-4B",
                    "Модель: рассуждающий эмбеддер на базе Qwen3-Embedding-4B. На RECOR у авторов "
                    "бенчмарка 0.545 против 0.446 у BM25 (с историей)."),
@@ -1303,4 +1436,5 @@ json.dump(rerank_nb(), open(f"{OUT}/rerank.ipynb", "w"), ensure_ascii=False, ind
 json.dump(generate_nb(), open(f"{OUT}/generate.ipynb", "w"), ensure_ascii=False, indent=1)
 json.dump(judge_nb(), open(f"{OUT}/judge.ipynb", "w"), ensure_ascii=False, indent=1)
 json.dump(query_nb(), open(f"{OUT}/query.ipynb", "w"), ensure_ascii=False, indent=1)
+json.dump(llm_rerank_nb(), open(f"{OUT}/llm_rerank.ipynb", "w"), ensure_ascii=False, indent=1)
 print("записано:", sorted(os.listdir(OUT)))
