@@ -8,9 +8,9 @@ topics, ndcg10, write_run) одинаковы во всех ноутбуках.
 import json, os
 OUT = os.path.dirname(os.path.abspath(__file__))
 
-def nb(cells):
+def nb(cells, gpu="T4"):
     return {"nbformat": 4, "nbformat_minor": 5,
-            "metadata": {"accelerator": "GPU", "colab": {"gpuType": "T4", "provenance": []},
+            "metadata": {"accelerator": "GPU", "colab": {"gpuType": gpu, "provenance": []},
                          "kernelspec": {"name": "python3", "display_name": "Python 3"},
                          "language_info": {"name": "python"}},
             "cells": [{"cell_type": t, "metadata": {}, "source": src.strip("\n").splitlines(True),
@@ -116,6 +116,60 @@ def write_run(path, run, tag):
             for r, (d, s) in enumerate(sorted(docs.items(), key=lambda x: -x[1]), 1):
                 f.write(f"{q}\tQ0\t{d}\t{r}\t{s:.6f}\t{tag}\n")
     os.replace(path + ".tmp", path)
+'''
+
+LLM_SETUP = r'''
+# ── 2. Drive, vLLM, GPU ─────────────────────────────────────────────────────
+import os, sys, subprocess
+os.environ["HF_HUB_DISABLE_XET"] = "1"
+from google.colab import drive
+drive.mount("/content/drive")
+!pip -q install vllm pytrec-eval-terrier 2>&1 | tail -2
+import torch
+
+# vllm ставит свой torch, а torchvision/torchaudio из Colab остаются под другую
+# CUDA, и import vllm падает. Лечение из occ-rag-bfcl: torchaudio снести,
+# torchvision поставить под CUDA нового torch. После правки нужен перезапуск.
+def _imports_ok(mod):
+    try:
+        __import__(mod); return True
+    except RuntimeError:
+        return False       # стоит, но собран под другую CUDA
+    except ImportError:
+        return True        # не стоит — и конфликта нет
+fixed = False
+if not _imports_ok("torchaudio"):
+    subprocess.run([sys.executable, "-m", "pip", "-q", "uninstall", "-y", "torchaudio"], check=True)
+    fixed = True
+if not _imports_ok("torchvision") and "+" in torch.__version__:
+    base, cu = torch.__version__.split("+")
+    subprocess.run([sys.executable, "-m", "pip", "-q", "install", "--force-reinstall", "--no-deps",
+                    f"torchvision==0.{int(base.split('.')[1]) + 15}.*",
+                    "--index-url", f"https://download.pytorch.org/whl/{cu}"], check=True)
+    fixed = True
+if fixed:
+    raise RuntimeError("Зависимости исправлены. Среда выполнения → Перезапустить сеанс, "
+                       "потом снова «Выполнить все».")
+assert torch.cuda.is_available(), "Нет GPU: Среда выполнения → Сменить среду выполнения → A100 или L4"
+MEM = torch.cuda.get_device_properties(0).total_memory / 1e9
+DTYPE = "bfloat16" if torch.cuda.is_bf16_supported() else "half"   # T4 bf16 не умеет
+BIG = MEM >= 39                                                      # A100 40/80 ГБ
+print(torch.cuda.get_device_name(0), f"{MEM:.0f} ГБ, {DTYPE}, torch", torch.__version__)
+
+def load_llm(model, maxlen, util=0.88):
+    """На время конструктора — настоящие stdout/stderr: в ядре Jupyter vLLM падает
+    на sys.stdout.fileno() ещё до загрузки весов (occ-rag-bfcl)."""
+    from vllm import LLM
+    out, err = sys.stdout, sys.stderr
+    sys.stdout, sys.stderr = sys.__stdout__, sys.__stderr__
+    try:
+        return LLM(model=model, dtype=DTYPE, max_model_len=maxlen, gpu_memory_utilization=util, seed=0)
+    finally:
+        sys.stdout, sys.stderr = out, err
+
+def chat(tok, msgs):
+    """Промпт по шаблону модели; у Qwen3 размышления выключены (быстро, детерминированно)."""
+    return tok.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False, enable_thinking=False)
 '''
 
 # ============================================================== embed ========
@@ -376,6 +430,368 @@ print("Дальше: скачать", dst, "в runs/ проекта и сказ�
     ]
     return nb(cells)
 
+# =========================================================== generate ========
+GEN_WORKER = r'''
+"""Ответы одного ридера на все задания (2b и 2c по первым стадиям). Запускается
+из generate.ipynb отдельным процессом на каждый ридер: так vLLM точно отдаёт
+память GPU перед следующей моделью. Модуль же импортирует ячейка итогов."""
+import json, math, os, re, sys, time
+
+OCC_STOP = [151643, 151645, 151683]   # <|endoftext|> <|im_end|> <|answer_end|> — generation_config OCC
+CONTROL_SYSTEM = (
+    "You are a helpful assistant in a multi-turn conversation. Answer the user's latest message "
+    "using only the numbered documents attached to it.\n"
+    "Reply in this format:\n"
+    "Line 1: ANSWERABLE if the documents contain enough information to answer, otherwise UNANSWERABLE.\n"
+    "Next lines: if ANSWERABLE, the answer in 2-5 sentences in a natural conversational tone; "
+    "if UNANSWERABLE, say briefly what information is missing.")
+
+
+def load_turns(data, domains, split):
+    """Реплики с золотом. history — прошлые реплики диалога (вопрос, ответ): это и есть
+    conversation_history. reference — золотой ответ ТЕКУЩЕЙ реплики: только для аудита
+    и судьи, в промпт ридера не идёт. Золото — только то, что есть в qrels: 3 золотых id
+    в politics отсутствуют в корпусе, организаторы выкинули их из qrels."""
+    out = []
+    for dom in domains:
+        qrels = {tuple(l.split()[0:3:2]) for l in open(f"{data}/{dom}/qrels_{split}.txt") if l.strip()}
+        for c in json.load(open(f"{data}/{dom}/benchmark_{split}.json", encoding="utf-8")):
+            prev = []
+            for t in c["turns"]:
+                qid = f"{c['id']}_turn_{t['turn_id']}"
+                gold = [d for d in t.get("gold_doc_ids") or t.get("supporting_doc_ids") or [] if (qid, d) in qrels]
+                if gold:
+                    out.append({"domain": dom, "topic_id": qid,
+                                "turn_id": t["turn_id"], "query": t["query"], "history": list(prev),
+                                "gold": list(gold), "reference": t["answer"]})
+                prev.append((t["query"], t["answer"]))
+    return out
+
+
+def read_top(path, k):
+    run = {}
+    for ln in open(path, encoding="utf-8"):
+        p = ln.split()
+        if len(p) == 6:
+            run.setdefault(p[0], []).append((int(p[3]), p[2]))
+    return {q: [d for _, d in sorted(v)[:k]] for q, v in run.items()}
+
+
+def contexts(C, turns, split, job):
+    """"2b" → золотые документы; "2c-<прогон>" → топ-K из Drive/reteco/runs/<прогон>_<split>."""
+    if job == "2b":
+        return {(t["domain"], t["topic_id"]): t["gold"] for t in turns}
+    tops = {dom: read_top(f"{C['drive']}/runs/{job[3:]}_{split}/{dom}/run.trec", C["k_ctx"])
+            for dom in C["domains"]}
+    return {(t["domain"], t["topic_id"]): tops[t["domain"]].get(t["topic_id"], []) for t in turns}
+
+
+def sufficiency(gold, ctx):
+    """Сколько золота в контексте и метка: all — всё золото, что влезает в K; none — ни одного."""
+    n = len(set(gold) & set(ctx))
+    full = min(len(gold), len(ctx)) if ctx else len(gold)
+    return n, ("none" if n == 0 else "all" if n >= full else "part")
+
+
+def corpus_texts(data, need):
+    """need: {домен: {doc_id}} → {(домен, doc_id): текст}."""
+    out = {}
+    for dom, ids in need.items():
+        for ln in open(f"{data}/{dom}/documents.jsonl", encoding="utf-8"):
+            if ln.strip():
+                d = json.loads(ln)
+                if d["doc_id"] in ids:
+                    out[(dom, d["doc_id"])] = d["content"]
+    return out
+
+
+def history_msgs(t):
+    m = []
+    for q, a in t["history"]:
+        m += [{"role": "user", "content": q}, {"role": "assistant", "content": a}]
+    return m
+
+
+class OCC:
+    """Шаблон OCC сам кладёт документы в последнюю реплику user; генерация начинается
+    с <|query_analysis_start|>, статус — <|status_start|>(UN)ANSWERABLE<|status_end|>."""
+    stop, skip_special, marker = OCC_STOP, False, "<|status_start|>"
+    STATUS = re.compile(r"<\|status_start\|>(.*?)(?:<\|status_end\|>|$)", re.S)
+    ANSWER = re.compile(r"<\|answer_start\|>(.*?)(?:<\|answer_end\|>|<\|im_end\|>|$)", re.S)
+    SPECIAL = re.compile(r"<\|[a-z_]+\|>")
+
+    def __init__(self, tok):
+        self.tok = tok
+
+    def prompt(self, t, docs):
+        msgs = history_msgs(t) + [{"role": "user", "content": t["query"]}]
+        return self.tok.apply_chat_template(msgs, documents=[{"text": d} for d in docs],
+                                            add_generation_prompt=True, tokenize=False,
+                                            enable_thinking=False)
+
+    def parse(self, raw):
+        m = self.STATUS.search(raw)
+        status = self.SPECIAL.sub("", m.group(1)).strip().upper() if m else ""
+        m = self.ANSWER.search(raw)
+        return status, (self.SPECIAL.sub("", m.group(1)).strip() if m else "")
+
+    def prefix(self, raw):
+        i = raw.find(self.marker)
+        return None if i < 0 else raw[:i + len(self.marker)]
+
+
+class Control:
+    """Открытая модель-контроль: тот же вход, статус первой строкой."""
+    stop, skip_special = None, True
+
+    def __init__(self, tok):
+        self.tok = tok
+
+    def prompt(self, t, docs):
+        numbered = "\n\n".join(f"[{i}] {d}" for i, d in enumerate(docs, 1))
+        msgs = ([{"role": "system", "content": CONTROL_SYSTEM}] + history_msgs(t)
+                + [{"role": "user", "content": f"Documents:\n{numbered}\n\nQuestion: {t['query']}"}])
+        return self.tok.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False,
+                                            enable_thinking=False)
+
+    def parse(self, raw):
+        first, _, rest = raw.strip().partition("\n")
+        m = re.search(r"\b(UN)?ANSWERABLE\b", first.upper())
+        if not m:
+            return "", raw.strip()
+        return m.group(0), rest.strip()
+
+    def prefix(self, raw):
+        return ""          # статус — самый первый токен ответа
+
+
+def p_status(tok, lp):
+    """Вероятность ANSWERABLE на позиции статуса: сумма вероятностей токенов-префиксов
+    «ANSWERABLE» против «UNANSWERABLE» среди топ-20 (ANS… против UN…). mass — сколько
+    вероятности пришлось на эти два варианта вообще."""
+    a = u = 0.0
+    for tid, x in lp.items():
+        s = tok.decode([tid]).strip()
+        if s and "UNANSWERABLE".startswith(s):
+            u += math.exp(x.logprob)
+        elif s and "ANSWERABLE".startswith(s):
+            a += math.exp(x.logprob)
+    return (round(a / (a + u), 6) if a + u > 0 else None), round(a + u, 6)
+
+
+def main(reader_id, cfg_path):
+    from vllm import LLM, SamplingParams
+    C = json.load(open(cfg_path))
+    llm = LLM(model=reader_id, dtype=C["dtype"], max_model_len=C["maxlen"],
+              gpu_memory_utilization=0.88, seed=0)
+    tok = llm.get_tokenizer()
+    R = (OCC if "OCC" in reader_id else Control)(tok)
+    # OCC: только greedy, без repetition_penalty — иначе ломается структурный формат
+    sp = SamplingParams(temperature=0.0, max_tokens=C["max_new"], stop_token_ids=R.stop,
+                        skip_special_tokens=R.skip_special, spaces_between_special_tokens=False)
+    sp1 = SamplingParams(temperature=0.0, max_tokens=1, logprobs=20)
+    short = reader_id.split("/")[-1]
+    limit = C["maxlen"] - C["max_new"]
+    ntok = lambda p: len(tok(p, add_special_tokens=False).input_ids)
+    os.makedirs(f"{C['drive']}/gen", exist_ok=True)
+    for split in C["splits"]:
+        turns = load_turns(C["data"], C["domains"], split)
+        jobs = [(j, contexts(C, turns, split, j)) for j in C["jobs"]]
+        need = {}
+        for _, ctx in jobs:
+            for (dom, _), ids in ctx.items():
+                need.setdefault(dom, set()).update(ids)
+        text = corpus_texts(C["data"], need)
+        for job, ctx in jobs:
+            path = f"{C['drive']}/gen/{short}_{job}_{split}.jsonl"
+            done = set()
+            if os.path.exists(path):
+                done = {(r["domain"], r["topic_id"]) for r in map(json.loads, open(path, encoding="utf-8"))}
+            prompts, keep, skipped = [], [], 0
+            for t in turns:
+                if (t["domain"], t["topic_id"]) in done:
+                    continue
+                ids = ctx[(t["domain"], t["topic_id"])]
+                docs = [text[(t["domain"], d)] for d in ids]
+                p, trimmed = R.prompt(t, docs), False
+                if ntok(p) > limit:      # не влезает — режем каждый документ, золото не выкидываем
+                    p, trimmed = R.prompt(t, [" ".join(d.split()[:C["trim_words"]]) for d in docs]), True
+                if ntok(p) > limit:
+                    skipped += 1
+                    continue
+                prompts.append(p)
+                keep.append((t, ids, trimmed))
+            print(f"{short} · {job} · {split}: сделать {len(prompts)}, готово {len(done)}, "
+                  f"не влезло {skipped}", flush=True)
+            t0 = time.time()
+            with open(path, "a", encoding="utf-8") as f:
+                for s in range(0, len(prompts), C["chunk"]):
+                    outs = llm.generate(prompts[s:s + C["chunk"]], sp, use_tqdm=False)
+                    raws = [o.outputs[0].text for o in outs]
+                    # второй проход: промпт + ответ до места статуса, один токен, топ-20 логпробов
+                    pref = [(i, R.prefix(r)) for i, r in enumerate(raws)]
+                    pref = [(i, x) for i, x in pref if x is not None]
+                    probs = {}
+                    if pref:
+                        o1 = llm.generate([prompts[s + i] + x for i, x in pref], sp1, use_tqdm=False)
+                        for (i, _), o in zip(pref, o1):
+                            probs[i] = p_status(tok, o.outputs[0].logprobs[0])
+                    for i, (o, raw) in enumerate(zip(outs, raws)):
+                        t, ids, trimmed = keep[s + i]
+                        status, answer = R.parse(raw)
+                        n_in, suff = sufficiency(t["gold"], ids)
+                        p, mass = probs.get(i, (None, 0.0))
+                        f.write(json.dumps({
+                            "domain": t["domain"], "topic_id": t["topic_id"], "turn_id": t["turn_id"],
+                            "split": split, "reader": reader_id, "mode": job[:2],
+                            "first_stage": job[3:] or None, "context_ids": ids, "n_gold": len(t["gold"]),
+                            "gold_in_ctx": n_in, "suff": suff, "status": status, "answer": answer,
+                            "p_answerable": p, "p_mass": mass, "finish": o.outputs[0].finish_reason,
+                            "trimmed": trimmed, "raw": raw}, ensure_ascii=False) + "\n")
+                    f.flush()
+                    print(f"  {s + len(outs)}/{len(prompts)} · {(time.time() - t0) / 60:.1f} мин", flush=True)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1], sys.argv[2])
+'''
+
+def generate_nb():
+    cells = [
+("markdown", r"""
+# RETECO · генерация ответов 2b и 2c (главный эксперимент статьи)
+
+Два ридера отвечают на каждую реплику dev по одному и тому же входу: история
+диалога + текущий вопрос + документы.
+- **2b** — документы золотые: контекста заведомо хватает.
+- **2c** — документы = топ-5 поиска. Первые стадии разной силы (BM25 по реплике
+  .18, BM25 + история .44, лучший BM25 .55) — «доза и эффект»: чем слабее поиск,
+  тем чаще в контексте нет ответа.
+
+Ридеры: `occ-ai/OCC-RAG-1.7B` (отвечает или отказывается, статус
+ANSWERABLE/UNANSWERABLE) и открытая модель-контроль (A100: Qwen3-8B, иначе
+Qwen3-4B-Instruct-2507) с тем же форматом статуса. Для каждого ответа
+сохраняется вероятность ANSWERABLE на позиции статуса — непрерывная уверенность.
+Метка достаточности — сколько золотых документов попало в контекст (из qrels).
+
+**Как запускать.** Среда → **A100** (лучше) или **L4**. На Drive должна лежать
+папка `reteco/runs` с прогонами `bm25_query_dev`, `bm25_hist_dev`,
+`bm25_fuse3_dev` (из `colab/drive/reteco` проекта). «Выполнить все». Если ячейка 2
+попросит перезапуск — Перезапустить сеанс и снова «Выполнить все».
+Оборвалось — «Выполнить все» ещё раз, готовые ответы пропускаются.
+
+**Сколько.** 858 реплик × 4 задания × 2 ридера ≈ 7 тыс. ответов. На A100
+оценка: OCC 15–25 мин, Qwen3-8B 30–60 мин; на L4 в 2–3 раза дольше.
+
+**Что получится.**
+- `reteco/gen/<ридер>_<2b|2c-первая_стадия>_dev.jsonl` — ответы, статус,
+  p_answerable, метка достаточности, id документов контекста
+- `reteco/audit/sample.csv` — 100 реплик для ручной проверки метки достаточности
+  (ключ отдельно, `sample_key.csv`)
+
+**Потом.** `judge.ipynb` оценивает ответы; скачать `reteco/gen` и `reteco/audit`
+в проект и сказать Claude.
+"""),
+("code", r'''
+# ── 1. Настройки ─────────────────────────────────────────────────────────────
+READERS = ["occ-ai/OCC-RAG-1.7B", "control"]   # control: A100 → Qwen/Qwen3-8B, иначе Qwen/Qwen3-4B-Instruct-2507
+FIRST_STAGES = ["bm25_query", "bm25_hist", "bm25_fuse3"]   # для 2c, от слабой к сильной; папки runs/<имя>_<сплит>
+DO_2B = True
+SPLITS = ["dev"]
+K_CTX = 5             # документов в контексте 2c
+MAX_NEW = 1200        # OCC пишет разбор перед ответом, ему нужно место
+MAXLEN = 16384        # золота бывает до 12 документов
+TRIM_WORDS = 300      # если промпт не влез — каждый документ режется до стольких слов
+CHUNK = 256           # сколько ответов между записями на Drive
+DRIVE = "/content/drive/MyDrive/reteco"
+'''),
+("code", LLM_SETUP), ("code", COMMON_DATA), ("code", COMMON_CODE),
+("code", "%%writefile /content/gen_worker.py\n" + GEN_WORKER.strip("\n")),
+("code", r'''
+# ── 6. Генерация: каждый ридер — отдельный процесс ───────────────────────────
+CONTROL = "Qwen/Qwen3-8B" if BIG else "Qwen/Qwen3-4B-Instruct-2507"
+readers = [CONTROL if r == "control" else r for r in READERS]
+jobs = (["2b"] if DO_2B else []) + [f"2c-{fs}" for fs in FIRST_STAGES]
+for fs in FIRST_STAGES:
+    for sp in SPLITS:
+        assert os.path.isdir(f"{RUNS}/{fs}_{sp}"), f"нет прогона {RUNS}/{fs}_{sp} — загрузить на Drive"
+cfg = {"drive": DRIVE, "data": DATA, "domains": DOMAINS, "splits": SPLITS, "jobs": jobs,
+       "k_ctx": K_CTX, "max_new": MAX_NEW, "maxlen": MAXLEN, "trim_words": TRIM_WORDS,
+       "chunk": CHUNK, "dtype": DTYPE}
+json.dump(cfg, open("/content/gen_cfg.json", "w"))
+
+def stream(cmd):
+    """Вывод дочернего процесса — в ячейку построчно."""
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+                         env={**os.environ, "VLLM_LOGGING_LEVEL": "WARNING"})
+    for line in p.stdout:
+        print(line, end="")
+    return p.wait()
+
+for r in readers:
+    print(f"\n=== {r} ===")
+    assert stream([sys.executable, "/content/gen_worker.py", r, "/content/gen_cfg.json"]) == 0, f"{r} упал, лог выше"
+json.dump({**cfg, "readers": readers, "gpu": torch.cuda.get_device_name(0),
+           "date": time.strftime("%Y-%m-%dT%H:%M:%S")},
+          open(f"{DRIVE}/gen/config.json", "w"), ensure_ascii=False, indent=2)
+'''),
+("code", r'''
+# ── 7. Итог: доля отказов по достаточности контекста и AUROC уверенности ─────
+sys.path.insert(0, "/content")
+import gen_worker as G
+from sklearn.metrics import roc_auc_score
+print(f"{'файл':<44}{'n':>5}{'отказ':>7}{'all':>6}{'part':>6}{'none':>6}{'AUROC':>7}")
+for path in sorted(glob.glob(f"{DRIVE}/gen/*.jsonl")):
+    rs = [json.loads(l) for l in open(path, encoding="utf-8")]
+    ref = lambda xs: sum(r["status"].startswith("UN") for r in xs) / max(1, len(xs))
+    by = {s: [r for r in rs if r["suff"] == s] for s in ("all", "part", "none")}
+    # AUROC: насколько p_answerable отделяет контекст с золотом (all) от контекста без (none)
+    ab = [r for r in rs if r["suff"] in ("all", "none") and r["p_answerable"] is not None]
+    auc = (roc_auc_score([r["suff"] == "all" for r in ab], [r["p_answerable"] for r in ab])
+           if len({r["suff"] for r in ab}) == 2 else float("nan"))
+    cells = "".join(f"{ref(by[s]):>6.2f}" if by[s] else f"{'—':>6}" for s in ("all", "part", "none"))
+    print(f"{os.path.basename(path)[:-6]:<44}{len(rs):>5}{ref(rs):>7.2f}{cells}{auc:>7.3f}")
+print("\nотказ — доля UNANSWERABLE; all/part/none — она же по метке достаточности. В 2b все all:"
+      "\nотказ там = ложный отказ. Статус не распознан:",
+      sum(1 for p in glob.glob(f"{DRIVE}/gen/*.jsonl") for l in open(p) if not json.loads(l)["status"]))
+'''),
+("code", r'''
+# ── 8. Выборка для ручной проверки метки достаточности → Drive/reteco/audit ──
+# 50 реплик, где в топ-5 нет ни одного золотого документа, и 50, где есть всё
+# влезающее золото. В sample.csv метки нет (слепая проверка): вопрос, история,
+# эталонный ответ и топ-5. Заполнить колонку answer_in_top5: да / нет / частично.
+import csv, random
+AUDIT_STAGE, AUDIT_N = FIRST_STAGES[-1], 50
+os.makedirs(f"{DRIVE}/audit", exist_ok=True)
+turns = G.load_turns(DATA, DOMAINS, "dev")
+ctx = G.contexts(cfg, turns, "dev", f"2c-{AUDIT_STAGE}")
+lab = {(t["domain"], t["topic_id"]): G.sufficiency(t["gold"], ctx[(t["domain"], t["topic_id"])]) for t in turns}
+rng = random.Random(0)
+pick = []
+for s in ("none", "all"):
+    pool = [t for t in turns if lab[(t["domain"], t["topic_id"])][1] == s]
+    pick += rng.sample(pool, min(AUDIT_N, len(pool)))
+rng.shuffle(pick)
+need = {}
+for t in pick:
+    need.setdefault(t["domain"], set()).update(ctx[(t["domain"], t["topic_id"])])
+text = G.corpus_texts(DATA, need)
+with open(f"{DRIVE}/audit/sample.csv", "w", newline="", encoding="utf-8") as f, \
+     open(f"{DRIVE}/audit/sample_key.csv", "w", newline="", encoding="utf-8") as g:
+    w, k = csv.writer(f), csv.writer(g)
+    w.writerow(["n", "domain", "question", "history", "reference_answer", "top5", "answer_in_top5"])
+    k.writerow(["n", "domain", "topic_id", "first_stage", "n_gold", "gold_in_top5", "suff"])
+    for n, t in enumerate(pick, 1):
+        key = (t["domain"], t["topic_id"])
+        hist = "\n".join(f"Q: {q}\nA: {a}" for q, a in t["history"])
+        top = "\n\n".join(f"[{i}] {text[(t['domain'], d)]}" for i, d in enumerate(ctx[key], 1))
+        w.writerow([n, t["domain"], t["query"], hist, t["reference"], top, ""])
+        k.writerow([n, t["domain"], t["topic_id"], AUDIT_STAGE, len(t["gold"]), *lab[key]])
+print(f"{len(pick)} реплик → {DRIVE}/audit/sample.csv; ключ — sample_key.csv")
+'''),
+    ]
+    return nb(cells, "A100")
+
 json.dump(embed_nb("AQ-MedAI/Diver-Retriever-4B", "Diver-Retriever-4B",
                    "Модель: рассуждающий эмбеддер на базе Qwen3-Embedding-4B. На RECOR у авторов "
                    "бенчмарка 0.545 против 0.446 у BM25 (с историей)."),
@@ -385,4 +801,5 @@ json.dump(embed_nb("hanhainebula/reason-embed-qwen3-4b-0928", "reason-embed-qwen
                    "на BRIGHT сильнее Diver."),
           open(f"{OUT}/reason_embed.ipynb", "w"), ensure_ascii=False, indent=1)
 json.dump(rerank_nb(), open(f"{OUT}/rerank.ipynb", "w"), ensure_ascii=False, indent=1)
+json.dump(generate_nb(), open(f"{OUT}/generate.ipynb", "w"), ensure_ascii=False, indent=1)
 print("записано:", sorted(os.listdir(OUT)))
