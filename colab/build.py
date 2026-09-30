@@ -124,7 +124,7 @@ import os, sys, subprocess
 os.environ["HF_HUB_DISABLE_XET"] = "1"
 from google.colab import drive
 drive.mount("/content/drive")
-!pip -q install vllm pytrec-eval-terrier 2>&1 | tail -2
+!pip -q install vllm openai pytrec-eval-terrier 2>&1 | tail -2
 import torch
 
 # vllm ставит свой torch, а torchvision/torchaudio из Colab остаются под другую
@@ -150,11 +150,12 @@ if not _imports_ok("torchvision") and "+" in torch.__version__:
 if fixed:
     raise RuntimeError("Зависимости исправлены. Среда выполнения → Перезапустить сеанс, "
                        "потом снова «Выполнить все».")
-assert torch.cuda.is_available(), "Нет GPU: Среда выполнения → Сменить среду выполнения → A100 или L4"
-MEM = torch.cuda.get_device_properties(0).total_memory / 1e9
-DTYPE = "bfloat16" if torch.cuda.is_bf16_supported() else "half"   # T4 bf16 не умеет
-BIG = MEM >= 39                                                      # A100 40/80 ГБ
-print(torch.cuda.get_device_name(0), f"{MEM:.0f} ГБ, {DTYPE}, torch", torch.__version__)
+if globals().get("NEED_GPU", True):
+    assert torch.cuda.is_available(), "Нет GPU: Среда выполнения → Сменить среду выполнения → A100 или L4"
+MEM = torch.cuda.get_device_properties(0).total_memory / 1e9 if torch.cuda.is_available() else 0
+DTYPE = "bfloat16" if MEM and torch.cuda.is_bf16_supported() else "half"   # T4 bf16 не умеет
+BIG = MEM >= 39                                                             # A100 40/80 ГБ
+print(torch.cuda.get_device_name(0) if MEM else "без GPU", f"{MEM:.0f} ГБ, {DTYPE}, torch", torch.__version__)
 
 def load_llm(model, maxlen, util=0.88):
     """На время конструктора — настоящие stdout/stderr: в ядре Jupyter vLLM падает
@@ -792,6 +793,215 @@ print(f"{len(pick)} реплик → {DRIVE}/audit/sample.csv; ключ — samp
     ]
     return nb(cells, "A100")
 
+# ============================================================== judge ========
+def judge_nb():
+    cells = [
+("markdown", r"""
+# RETECO · судья ответов 2b и 2c
+
+Оценивает каждый ответ из `reteco/gen` по пяти осям организаторов (1–5):
+correctness, completeness, relevance, conversational coherence, faithfulness.
+Плюс тип ответа (ответил / отказался / частично) и «есть ли утверждения без
+опоры в документах». Судья видит историю, вопрос, документы, которые видел
+ридер, эталонный ответ (`turns[].answer` — для оценки его брать можно) и ответ.
+
+Организаторы судят GPT-4o с промптами, которые откроют только в январе. Здесь —
+наша версия судьи. **Какой моделью судить — решает Иван** (docs/NOTES.md).
+Два бэкенда:
+- `BACKEND = "vllm"` — открытая модель здесь же (A100: Qwen3-14B, L4: Qwen3-8B,
+  T4: Qwen3-8B-AWQ). Бесплатно, воспроизводимо.
+- `BACKEND = "api"` — OpenAI-совместимый API, например `gpt-4o`, как у
+  организаторов. Ключ — в секретах Colab (значок ключа слева): `OPENAI_API_KEY`,
+  при другом провайдере ещё `OPENAI_BASE_URL`. GPU не нужен.
+
+Судья обязан быть другой моделью, чем ридер: файлы того же ридера пропускаются.
+
+**Как запускать.** После `generate.ipynb`. Выбрать бэкенд в ячейке 1 →
+«Выполнить все». Оборвалось — ещё раз, готовые оценки пропускаются.
+
+**Сколько.** ≈7 тыс. ответов. vLLM на A100 — 30–60 мин; API — зависит от
+лимитов ключа, GPT-4o порядка $15–25 за всё.
+
+**Что получится.** `reteco/judge/<судья>/<файл генерации>.jsonl` и сводка
+`reteco/judge/<судья>/summary.csv`.
+"""),
+("code", r'''
+# ── 1. Настройки ─────────────────────────────────────────────────────────────
+BACKEND = "vllm"      # "vllm" или "api"
+JUDGE = "auto"        # vllm: auto = по GPU; api: имя модели, например "gpt-4o"
+GEN_GLOB = "*_dev.jsonl"   # какие файлы из Drive/reteco/gen судить
+MAXLEN = 16384
+CHUNK = 256           # оценок между записями на Drive
+API_WORKERS = 8       # параллельных запросов к API
+DRIVE = "/content/drive/MyDrive/reteco"
+NEED_GPU = BACKEND == "vllm"
+'''),
+("code", LLM_SETUP), ("code", COMMON_DATA), ("code", COMMON_CODE),
+("code", "%%writefile /content/gen_worker.py\n" + GEN_WORKER.strip("\n")),
+("code", r'''
+# ── 6. Промпт судьи и разбор ответа ─────────────────────────────────────────
+sys.path.insert(0, "/content")
+import gen_worker as G
+AXES = ["correctness", "completeness", "relevance", "coherence", "faithfulness"]
+SYSTEM = ("You are an impartial expert evaluator of conversational question answering systems. "
+          "You grade one assistant response at a time, strictly and consistently.")
+RUBRIC = """Score each criterion from 1 (very poor) to 5 (excellent):
+- correctness: factual agreement with the reference answer; wrong or contradicting facts lower it.
+- completeness: how many key points of the reference answer the response covers.
+- relevance: the response addresses the latest question and stays on topic.
+- coherence: the response fits the conversation as the next turn - consistent with earlier turns, resolves references naturally.
+- faithfulness: every claim is supported by the provided documents; a refusal that makes no claims gets 5.
+Also classify:
+- response_type: "answered" (a substantive answer), "refused" (declines or says the information is not available), or "partial" (answers part and says the rest is not available).
+- unsupported_claims: true if the response states any fact not supported by the provided documents.
+
+Return only a JSON object with keys in this order: "rationale" (at most 3 sentences), "correctness", "completeness", "relevance", "coherence", "faithfulness", "response_type", "unsupported_claims"."""
+REFUSAL = "I can't answer this from the provided documents."
+
+def judge_msgs(t, docs, rec):
+    hist = "\n".join(f"User: {q}\nAssistant: {a}" for q, a in t["history"]) or "(none)"
+    numbered = "\n\n".join(f"[{i}] {d}" for i, d in enumerate(docs, 1)) or "(none)"
+    ans = rec["answer"] or (REFUSAL if rec["status"].startswith("UN") else "(empty)")
+    user = (f"Grade the RESPONSE to the user's latest question in the conversation.\n\n"
+            f"## Conversation so far\n{hist}\n\n## Latest question\n{t['query']}\n\n"
+            f"## Documents the assistant was given\n{numbered}\n\n"
+            f"## Reference answer (written by an expert who had the correct documents)\n{t['reference']}\n\n"
+            f"## Response to grade\n{ans}\n\n{RUBRIC}")
+    return [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}]
+
+def parse_judge(raw):
+    m = re.search(r"\{.*\}", raw or "", re.S)
+    try:
+        d = json.loads(m.group(0))
+    except Exception:
+        return None
+    out = {}
+    for k in AXES:
+        v = d.get(k)
+        if isinstance(v, str) and v.strip().isdigit():
+            v = int(v)
+        if not isinstance(v, (int, float)) or not 1 <= v <= 5:
+            return None
+        out[k] = int(round(v))
+    rt = str(d.get("response_type", "")).strip().lower()
+    uc = d.get("unsupported_claims")
+    uc = uc.strip().lower() == "true" if isinstance(uc, str) else uc
+    if rt not in ("answered", "refused", "partial") or not isinstance(uc, bool):
+        return None
+    return {**out, "response_type": rt, "unsupported_claims": uc, "rationale": str(d.get("rationale", ""))[:1000]}
+'''),
+("code", r'''
+# ── 7. Бэкенд: vLLM здесь же или API по ключу ───────────────────────────────
+if BACKEND == "vllm":
+    from vllm import SamplingParams
+    if JUDGE == "auto":
+        JUDGE = "Qwen/Qwen3-14B" if BIG else "Qwen/Qwen3-8B" if MEM >= 22 else "Qwen/Qwen3-8B-AWQ"
+    llm = load_llm(JUDGE, MAXLEN)
+    tok = llm.get_tokenizer()
+    SP = SamplingParams(temperature=0.0, max_tokens=600)
+    def run_batch(msg_lists):
+        outs = llm.generate([chat(tok, m) for m in msg_lists], SP, use_tqdm=False)
+        return [o.outputs[0].text for o in outs]
+else:
+    from openai import OpenAI
+    from google.colab import userdata
+    from concurrent.futures import ThreadPoolExecutor
+    assert JUDGE != "auto", "для api указать модель в JUDGE, например gpt-4o"
+    def secret(k):
+        try:
+            return userdata.get(k)
+        except Exception:
+            return None
+    client = OpenAI(api_key=secret("OPENAI_API_KEY"), base_url=secret("OPENAI_BASE_URL") or None)
+    def call(msgs):
+        for attempt in range(6):
+            try:
+                r = client.chat.completions.create(model=JUDGE, messages=msgs, temperature=0, max_tokens=600,
+                                                   response_format={"type": "json_object"})
+                return r.choices[0].message.content or ""
+            except Exception as e:
+                print("  API:", type(e).__name__, str(e)[:120]); time.sleep(2 ** attempt)
+        return ""
+    def run_batch(msg_lists):
+        with ThreadPoolExecutor(API_WORKERS) as ex:
+            return list(ex.map(call, msg_lists))
+SHORT = JUDGE.split("/")[-1]
+OUTD = f"{DRIVE}/judge/{SHORT}"
+os.makedirs(OUTD, exist_ok=True)
+print("судья:", JUDGE, "→", OUTD)
+'''),
+("code", r'''
+# ── 8. Оценка всех файлов генерации → Drive ─────────────────────────────────
+turns = {}
+for path in sorted(glob.glob(f"{DRIVE}/gen/{GEN_GLOB}")):
+    recs = [json.loads(l) for l in open(path, encoding="utf-8")]
+    if not recs:
+        continue
+    name = os.path.basename(path)
+    if recs[0]["reader"].split("/")[-1] == SHORT:
+        print(f"[пропуск] {name}: ридер и судья — одна модель"); continue
+    split = recs[0]["split"]
+    if split not in turns:
+        turns[split] = {(t["domain"], t["topic_id"]): t for t in G.load_turns(DATA, DOMAINS, split)}
+    out = f"{OUTD}/{name}"
+    done = {(r["domain"], r["topic_id"]) for r in map(json.loads, open(out, encoding="utf-8"))} if os.path.exists(out) else set()
+    todo = [r for r in recs if (r["domain"], r["topic_id"]) not in done and (r["domain"], r["topic_id"]) in turns[split]]
+    need = {}
+    for r in todo:
+        need.setdefault(r["domain"], set()).update(r["context_ids"])
+    text = G.corpus_texts(DATA, need)
+    t0 = time.time()
+    with open(out, "a", encoding="utf-8") as f:
+        for s in range(0, len(todo), CHUNK):
+            part = todo[s:s + CHUNK]
+            msgs = [judge_msgs(turns[split][(r["domain"], r["topic_id"])],
+                               [text[(r["domain"], d)] for d in r["context_ids"]], r) for r in part]
+            raws = run_batch(msgs)
+            bad = [i for i, x in enumerate(raws) if parse_judge(x) is None]
+            if bad:          # одна повторная попытка с напоминанием про JSON
+                again = run_batch([m[:-1] + [{"role": "user", "content": m[-1]["content"]
+                                   + "\n\nReturn ONLY the JSON object, nothing else."}] for m in (msgs[i] for i in bad)])
+                for i, x in zip(bad, again):
+                    raws[i] = x
+            for r, raw in zip(part, raws):
+                j = parse_judge(raw)
+                f.write(json.dumps({"domain": r["domain"], "topic_id": r["topic_id"], "split": split,
+                                    "reader": r["reader"], "mode": r["mode"], "first_stage": r["first_stage"],
+                                    "suff": r["suff"], "status": r["status"], "judge": JUDGE,
+                                    "ok": j is not None, **(j or {}), "raw": raw}, ensure_ascii=False) + "\n")
+            f.flush()
+            print(f"  {name}: {s + len(part)}/{len(todo)} · {(time.time() - t0) / 60:.1f} мин")
+    print(f"{name}: готово")
+'''),
+("code", r'''
+# ── 9. Сводка: средние по осям, отказы и выдумки; 2c — по достаточности ─────
+import csv
+rows = []
+for path in sorted(glob.glob(f"{OUTD}/*.jsonl")):
+    rs = [json.loads(l) for l in open(path, encoding="utf-8")]
+    good = [r for r in rs if r["ok"]]
+    for suff in ("все", "all", "part", "none"):
+        g = good if suff == "все" else [r for r in good if r["suff"] == suff]
+        if not g or (suff != "все" and rs[0]["mode"] == "2b"):
+            continue
+        n = len(g)
+        rows.append({"file": os.path.basename(path)[:-6], "suff": suff, "n": n,
+                     **{a: round(sum(r[a] for r in g) / n, 3) for a in AXES},
+                     "refused": round(sum(r["response_type"] == "refused" for r in g) / n, 3),
+                     "unsupported": round(sum(r["unsupported_claims"] for r in g) / n, 3),
+                     "parse_fail": sum(not r["ok"] for r in rs) if suff == "все" else ""})
+assert rows, f"в {OUTD} нет разобранных оценок — смотреть поле raw в файлах"
+with open(f"{OUTD}/summary.csv", "w", newline="", encoding="utf-8") as f:
+    w = csv.DictWriter(f, fieldnames=list(rows[0])); w.writeheader(); w.writerows(rows)
+print(f"{'файл':<42}{'дост.':>6}{'n':>5}" + "".join(f"{a[:5]:>7}" for a in AXES) + f"{'отказ':>7}{'выдум':>7}")
+for r in rows:
+    print(f"{r['file']:<42}{r['suff']:>6}{r['n']:>5}" + "".join(f"{r[a]:>7.2f}" for a in AXES)
+          + f"{r['refused']:>7.2f}{r['unsupported']:>7.2f}")
+print("\nвыдум — доля ответов с утверждениями без опоры в документах. Сводка:", f"{OUTD}/summary.csv")
+'''),
+    ]
+    return nb(cells, "A100")
+
 json.dump(embed_nb("AQ-MedAI/Diver-Retriever-4B", "Diver-Retriever-4B",
                    "Модель: рассуждающий эмбеддер на базе Qwen3-Embedding-4B. На RECOR у авторов "
                    "бенчмарка 0.545 против 0.446 у BM25 (с историей)."),
@@ -802,4 +1012,5 @@ json.dump(embed_nb("hanhainebula/reason-embed-qwen3-4b-0928", "reason-embed-qwen
           open(f"{OUT}/reason_embed.ipynb", "w"), ensure_ascii=False, indent=1)
 json.dump(rerank_nb(), open(f"{OUT}/rerank.ipynb", "w"), ensure_ascii=False, indent=1)
 json.dump(generate_nb(), open(f"{OUT}/generate.ipynb", "w"), ensure_ascii=False, indent=1)
+json.dump(judge_nb(), open(f"{OUT}/judge.ipynb", "w"), ensure_ascii=False, indent=1)
 print("записано:", sorted(os.listdir(OUT)))
