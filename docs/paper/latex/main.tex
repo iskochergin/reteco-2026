@@ -1,0 +1,406 @@
+\documentclass[11pt]{article}
+
+\usepackage[preprint]{acl}
+\usepackage{times}
+\usepackage{latexsym}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{microtype}
+\usepackage{inconsolata}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{multirow}
+\usepackage{xcolor}
+\usepackage{tabularx}
+\usepackage{float}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usetikzlibrary{positioning,calc}
+\usepackage{pifont}
+\newcommand{\cmark}{\ding{51}}
+\newcommand{\xmark}{\ding{55}}
+
+\newcommand{\ci}[2]{\,{\scriptsize[#1,\,#2]}}
+\newcommand{\qnone}{\textnormal{\textsc{none}}}
+\newcommand{\cno}{\textit{no}}
+\newcommand{\cyes}{\textit{yes}}
+\newcommand{\cpart}{\textit{partial}}
+\setlist{nosep,leftmargin=*}
+
+% default title box is 5cm; a two-line title with one author needs less
+\setlength\titlebox{3.6cm}
+
+\title{Better Retrievers, Worse Labels: How Incomplete Relevance Judgments\\
+Distort Abstention Evaluation in Conversational RAG}
+
+\author{Ivan Kochergin}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Evaluating abstention in retrieval-augmented generation requires knowing whether each retrieved context is sufficient. A common shortcut treats a context without gold documents as unanswerable. On RECOR (SemEval-2027 RETECO), we compare this label with content-based labels from two open LLM judges and a blind double annotation of 250 contexts by a third LLM family, across four retrievers (nDCG@10 .18--.59) and four readers. As retrieval improves, the qrels-derived ``insufficient'' class fills with contexts that are in fact sufficient: from turn-only BM25 to a hybrid retriever, the share of ``no gold'' contexts containing the answer rises from 28\% to 72\%, and the label's precision falls from .68 to .10 (second judge: .84 to .21; blind audit: .70 to .21). This mostly reflects a falling base rate, but the label also loses information beyond it (Youden's $J$ falls from .52 to .15). In a negative control with contexts from other dialogues, one judge labels 4\% of contexts sufficient and the other none. On MTRAG, whose qrels come from annotators and whose corpus has no mined negatives, precision falls from .72 to .50 as nDCG@10 rises from .18 to .42, and the primary judge rarely credits passages that the annotators rejected (8\%, against 59\% for gold passages). Under the qrels label, readers' answerability AUROC is understated by up to .19, the refusal gap between insufficient retrieved and gold contexts vanishes at a weaker retriever for three of four readers, and a retrieval-score baseline looks like the best sufficiency detector, whereas under the content label it trails a reader's own score, significantly on the two BM25 retrievers without query expansion. We release the labels and give recommendations.
+\end{abstract}
+
+%=====================================================================
+\section{Introduction}
+%=====================================================================
+
+\begin{figure}[t]
+\small
+\newcommand{\wide}[1]{\multicolumn{3}{@{}p{\columnwidth}@{}}{#1}}
+\begin{tabularx}{\columnwidth}{@{}Xcc@{}}
+\toprule
+\wide{\textbf{Question:} \emph{In glucose meters, how come they only pick up glucose and not other sugars like sucrose in water?}}\\
+\addlinespace[3pt]
+\wide{\textbf{Retrieved document 2} (qrels: negative): ``\ldots{} based upon the enzyme glucose oxidase. Since an enzyme is used, it is very specific for only D-glucose \ldots''}\\
+\addlinespace[3pt]
+\wide{The gold document contains this passage verbatim but was not retrieved.}\\
+\midrule
+ & qrels label & content label\\
+\cmidrule(l){2-3}
+Context & insufficient & sufficient\\
+Reader abstains & correct & wrong\\
+Reader answers correctly & wrong & correct\\
+\bottomrule
+\end{tabularx}
+\caption{A false miss of BM25-fusion (medical sciences). The retrieved document contains the answer but is labelled negative in the qrels, so the qrels label and the content label disagree on the context and grade the same reader behaviour in opposite ways.}
+\label{fig:teaser}
+\end{figure}
+
+A retrieval-augmented reader should answer when the retrieved documents support an answer and abstain when they do not \citep{joren2025sufficient,song2025trustscore}. In conversational search the decision is frequent, because turns are elliptical and first-stage retrieval misses: with the official baseline of our task, 35\% of dev turns have no gold document in the top-5. Recent benchmarks therefore evaluate retrieval and generation end to end, and each system answers from what it retrieved \citep{katsis2025mtrag,rosenthal2026semeval}. SemEval-2027 RETECO \citep{abdallah2026reteco} pairs two such settings on the same turns: answering from the gold documents (task 2b) and answering from one's own retrieval (task 2c).
+
+Scoring abstention in the end-to-end setting requires knowing, for each retrieved context, whether it suffices. Labelling every context of every system by hand is infeasible, and the labels would be specific to one retriever. The convenient proxy is to read sufficiency off the relevance judgments: a context is \emph{insufficient} if it contains none of the turn's gold documents. This proxy is implicit in benchmark designs that call a question unanswerable when no relevant passage exists \citep{rosenthal2026semeval}, in detectors trained and tested on whether annotated passages are present \citep{chen2026rinse}, and in studies that create unanswerability by removing gold passages from the index \citep{chandradevan2026search}. The 2b/2c pairing invites the same reading, since 2b is sufficient by construction and a 2c context without gold looks like natural unanswerability.
+
+The proxy is only as good as the qrels. Relevance judgments are known to be incomplete, and stronger systems retrieve more unjudged relevant documents \citep{arabzadeh2022shallow,weller2025rank1}. Incompleteness that grows with retriever quality confounds every comparison across retrievers, and comparisons across retrievers are what end-to-end abstention evaluation reports. Figure~\ref{fig:teaser} shows one such case: the retriever finds the answer in a document the qrels do not credit, and the proxy rewards the reader that refuses.
+
+We measure this effect. On the 858 dev turns of RECOR \citep{ali2026recor} we build a ladder of four first-stage retrievers, BM25-turn, BM25-hist, BM25-fusion and a hybrid (\S\ref{sec:setup}; nDCG@10 .18, .44, .55, .59), run four readers on each top-5 context and on the gold context, and label every context by content: an LLM judge reads the dialogue, the reference answer and the five documents and decides whether the documents support the answer. Two open judges of different families label all contexts; a third model family annotates 250 contexts blind, twice, with adjudication. Our findings:
+
+\begin{itemize}
+\item \textbf{The qrels label degrades with retrieval quality} (\S\ref{sec:bias}). Its precision falls from .68 on BM25-turn to .10 on the hybrid, in each of the 11 domains (on few contexts per domain), and the second judge and the blind audit reproduce the decline (.84 to .21, .70 to .21). In a negative control with contexts from other dialogues, phi-4 labels 4\% \cyes{} and Qwen3-14B none.
+\item \textbf{False misses are mostly dialogue-tied} (\S\ref{sec:anatomy}). In the StackExchange domains the answer usually sits in a hard negative mined for the same question, sometimes a verbatim copy of a gold passage; in the BRIGHT domains it sits in another turn's gold or a neighbouring chunk of the gold page.
+\item \textbf{The label changes conclusions about abstention} (\S\ref{sec:consequences}). On the hybrid it puts the answerability scores of the three Qwen3 readers near chance (AUROC .50--.54, against up to .72 under the content label), hides the 2b/2c refusal gap, and crowns a retrieval-score baseline as the best sufficiency detector. Of 384 uncorrected pairwise comparisons, 23 change sign, against 2 when one content judge is swapped for the other.
+\item \textbf{The decline replicates on MTRAG} (\S\ref{sec:mtrag}), whose qrels come from annotators and whose corpus has no mined negatives: precision falls from .72 to .50 as nDCG@10 rises from .18 to .42. Checked against the annotators' own judgments, phi-4 credits 8\% of the passages they rejected and 59\% of gold passages, and almost no false miss rests on a rejected passage.
+\end{itemize}
+
+Our hybrid retriever reaches nDCG@10 .591 on dev, above the official baseline (.438; Appendix~\ref{app:retrieval}). We release code, retrieval runs, model outputs, content labels and audit annotations.\footnote{\url{https://github.com/iskochergin/reteco-2026}}
+
+%=====================================================================
+\section{Related Work}
+%=====================================================================
+
+\paragraph{Sufficiency and abstention in RAG.}
+Abstention has been studied for reading comprehension with unanswerable questions \citep{rajpurkar2018know,trivedi2022musique}, for LLMs in general \citep{wen2025know,kirichenko2025abstentionbench} and, for RAG, where the reader must notice that retrieved text does not support an answer \citep{chen2024benchmarking,peng2025unanswerability}. \citet{joren2025sufficient} define \emph{sufficient context} by content and label it with an LLM autorater; \citet{song2025trustscore} score groundedness and refusal per context with NLI against gold claims. Both label sufficiency by content but do not compare against qrels-derived labels or vary the retriever.
+
+\paragraph{Unanswerability in conversational RAG benchmarks.}
+Conversational retrieval collections \citep{dalton2019cast,anantha2021qrecc,adlakha2022topiocqa} and multi-turn RAG benchmarks \citep{katsis2025mtrag,rosenthal2026semeval} increasingly score retrieval and generation together. In MTRAG and SemEval-2026 Task~8, unanswerable questions are those for which annotators found no relevant passage; the task overview notes one such question for which many systems retrieved relevant passages, but does not audit the label systematically \citep{rosenthal2026semeval}. \citet{asai2021challenges} showed that in information-seeking QA many questions annotated as unanswerable stem from a failure to retrieve an answer-bearing paragraph rather than from the question itself. Related but non-answering passages distract readers more as retrievers get stronger \citep{amiraz2025distracting,jin2025long}, and refusal after a retrieval miss has been tabulated per retriever \citep{vondaniken2026rat}. We study the context-level version, in which the turn is answerable from the corpus but the retrieved context lacks the gold and is labelled unanswerable.
+
+\paragraph{Incomplete relevance judgments.}
+Pooling leaves relevant documents unjudged, and evaluation is biased against systems that retrieve them \citep{zobel1998reliable,buckley2004retrieval,yilmaz2006estimating}. Shallow judgments leave many relevant passages unjudged in MS MARCO and BEIR \citep{arabzadeh2022shallow,thakur2021beir}, and manual re-judgment of unjudged top-10 documents on TREC DL19 finds that the share that is relevant rises from 50\% for MonoT5 to 86--88\% for reasoning rerankers \citep{weller2025rank1}. Conversational test collections become less reusable in deeper turns \citep{abbasiantaeb2025improving}, and BRIGHT corpora contain unlabelled copies of gold documents \citep{sharifymoghaddam2026lighting}. LLM judgments can fill such holes \citep{thomas2024large,upadhyay2024umbrela}, with known risks of circularity \citep{clarke2025llm}; in conversational collections, the filled holes favour or penalise new runs depending on the LLM \citep{abbasiantaeb2024can}. These works concern ranking metrics. We show that the same incompleteness becomes a retriever-dependent bias in a binary label that decides which abstentions count as correct.
+
+\paragraph{Detecting insufficiency.}
+Readers' own signals, such as verbalised status, token probabilities and hidden-state probes, can predict answerability \citep{kadavath2022language,slobodkin2023curious,lavi2026linear}. Probes trained on artificial unanswerability (SQuAD~2.0, MuSiQue) transfer imperfectly to new distributions \citep{kaminski2026probing,huq2026probing}. Changing the reference label is known to reorder hallucination detectors \citep{janiak2025illusion}.
+
+%=====================================================================
+\section{Setup}
+\label{sec:setup}
+%=====================================================================
+
+\paragraph{Data.}
+RECOR \citep{ali2026recor} is the data of RETECO track~2. Each dialogue expands one question from StackExchange (drones, politics, law, medical sciences, hardware) or from BRIGHT \citep{su2025bright} (economics, psychology, biology, sustainable living, robotics, earth science) into 3--5 short, context-dependent turns. Every turn has gold documents in a domain corpus of 16k--121k documents and a reference answer that GPT-4.1 composed from atomic facts verified against source documents; humans checked a sample of 200 dialogues. We use the 858 dev turns with gold (211 dialogues). The reference answer of the current turn is shown only to the sufficiency judges. As the task allows, the official dialogue history, which BM25-hist, the query expansions of BM25-fusion and the hybrid, and all readers receive, contains the reference answers of earlier turns.
+
+\paragraph{Retriever ladder.}
+We vary the first stage while keeping $k{=}5$ documents in the reader's context:
+\textbf{BM25-turn} searches with the current turn only (BM25, \citealp{robertson2009probabilistic});
+\textbf{BM25-hist} adds the official dialogue history (the task baseline);
+\textbf{BM25-fusion} (``Fusion'' in figures and tables) min-max fuses three LLM query expansions (a Query2doc passage \citep{wang2023query2doc} with history, a rewrite with a passage, and a rewrite with a HyDE passage \citep{gao2023precise});
+\textbf{Hybrid} adds a dense retriever (reason-embed-qwen3-4b, \citealp{chen2026reasonembed}, over the Query2doc query) to BM25-fusion.
+Fusion and mixing weights were chosen on train. Dev nDCG@10 is .183, .438, .550 and .591; the share of turns with at least one gold document in the top-5 is .28, .65, .77 and .82.
+
+\paragraph{Readers.}
+OCC-RAG-1.7B \citep{savkin2026occrag} writes a reasoning trace and then an explicit status, \texttt{ANSWERABLE} or \texttt{UNANSWERABLE}; we take $p(\textsc{answerable})$ at the status position. Qwen3-1.7B (post-trained from Qwen3-1.7B-Base, the pretrained model OCC is fine-tuned from), Qwen3-4B-Instruct-2507 and Qwen3-8B \citep{yang2025qwen3} are prompted to put the same status on the first line, and $p(\textsc{answerable})$ is read from the first-token distribution. Decoding is greedy (vLLM; \citealp{kwon2023vllm}). Each reader answers every turn from the gold documents (2b) and from the top-5 of each retriever (2c); a sixth run without documents is a control that we do not analyse here. A refusal is an \texttt{UNANSWERABLE} status; responses without a status line are excluded from refusal rates and from readers' AUROCs (at most 75 of 858 turns per context set, for Qwen3-4B; none for Qwen3-8B). Where available, we recheck refusal-based results with refusals taken from an LLM judge of the response (Qwen3-8B or phi-4). OCC refuses on 38--65\% of retrieved contexts and Qwen3-4B on 22--45\%; Qwen3-1.7B and Qwen3-8B rarely refuse, so their refusal-based comparisons rest on few events.
+
+\paragraph{Two sufficiency labels.}
+The \textbf{qrels label} counts gold documents in the context: \textsc{all}, \textsc{part}, or \qnone; the proxy treats \qnone{} as insufficient. The \textbf{content label} comes from a judge that reads the dialogue so far, the latest question, the reference answer and the numbered documents (without IDs). It outputs \cyes{} (the documents support the core of the reference answer), \cpart{} (some but not all central points) or \cno, names the supporting documents, and flags whether the answer was already given earlier in the dialogue (prompt in Appendix~\ref{app:prompts}). We run two judges of different families on all $858\times5$ contexts: phi-4 \citep{abdin2024phi4}, our primary judge, and Qwen3-14B \citep{yang2025qwen3}, which shares a family with all four readers (OCC is fine-tuned from Qwen3-1.7B-Base) and serves as a check. Binary metrics compare \cyes{} with \cno{} and drop \cpart{}; shares of insufficient contexts count only \cno{}. Appendix~\ref{app:partial} shows that the decline in precision and the rise in false misses hold when \cpart{} is counted on either side, while the growth of the overstatement ratio does not.
+
+\paragraph{Blind audit.}
+Two annotation runs of Claude Opus~5.5 label 250 contexts with the judges' scale, in two batches: first 100 BM25-fusion contexts (50 \qnone, 50 \textsc{all}), then 50 random \qnone{} contexts from each of the other three stages, shuffled together. Within each batch items are shuffled, carry no IDs, and differ only in the documents shown, so the annotator sees neither the stage nor the qrels label. The two runs follow different procedures (holistic reading versus claim-by-claim checking) and agree on 99\% of items in the first batch and 96\% in the second; a third run adjudicates disagreements. We report the audit as a model family independent of the judges and readers, not as human ground truth (see Limitations).
+
+\paragraph{Statistics.}
+Confidence intervals are 95\% percentile intervals from 1{,}000 bootstrap resamples of turns (seed 0); differences are paired. Resampling dialogues instead moves interval bounds by at most .03 (Appendix~\ref{app:repro}). Every number in the paper is recomputed by released scripts from saved model outputs; Appendix~\ref{app:repro} lists models, settings, counts and the script behind each table and figure.
+
+%=====================================================================
+\section{The qrels label degrades with retrieval quality}
+\label{sec:bias}
+%=====================================================================
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{fig_bias}
+\caption{(a) Share of top-5 contexts labelled insufficient by the qrels label (no gold document) and by the two content judges, against first-stage nDCG@10. (b) Precision of ``no gold'' as a detector of content insufficiency under each labeller; the blind audit covers 50 \qnone{} contexts per retriever. Bars: 95\% bootstrap CIs.}
+\label{fig:bias}
+\end{figure*}
+
+\input{tables/tab_bias}
+
+With \cpart{} counted as sufficient, the qrels label overstates insufficiency under both judges (Figure~\ref{fig:bias}, Table~\ref{tab:bias}), and the overstatement grows along the ladder: 71.6\% of BM25-turn contexts lack gold and 45.0\% lack the answer (1.6$\times$), while for the hybrid the figures are 18.4\% and 4.9\% (3.8$\times$). This growth depends on the convention. The \cpart{} label covers 10--14\% of contexts under phi-4 and 17--25\% under Qwen3-14B. When it is counted as insufficient, the ratio stays between 1.07 and 1.30$\times$ under phi-4 with no trend, and under Qwen3-14B it falls below 1 on the three stronger retrievers (.70, .65, .62$\times$; Appendix~\ref{app:partial}).
+
+Read as a detector of insufficient context, ``no gold'' has precision .68\ci{.65}{.72} on BM25-turn, .44 on BM25-hist, .18 on BM25-fusion and .10\ci{.05}{.16} on the hybrid. The drop from BM25-turn to the hybrid is $-.58$\ci{$-$.64}{$-$.52}, and every consecutive step is significant, including BM25-fusion to the hybrid ($-.08$\ci{$-$.14}{$-$.02}). Precision falls from BM25-turn to the hybrid in all 11 domains, although on the hybrid each domain has only 0--5 \qnone{} contexts that phi-4 labels \cno.
+
+Recall falls as well (.97, .69, .44, .31), partly because more \cno{} contexts on stronger retrievers contain a gold document that does not support the reference answer (Appendix~\ref{app:reverse}).
+
+Most of the drop in precision comes from the base rate. The share of \cyes{} contexts that the qrels label calls insufficient falls along the ladder (173 of 385 on BM25-turn, 113 of 711 on the hybrid; false alarms in Table~\ref{tab:bias}). What changes is that \cno{} contexts become rare (386, 157, 68, 42), so false misses outnumber them: with BM25-turn's recall and false-alarm rate, the hybrid's base rate alone would give a precision of .11. Precision is still the quantity that matters for abstention evaluation, because it sets how many sufficient contexts sit in the ``insufficient'' class against which AUROC and the 2b/2c contrast are computed (\S\ref{sec:consequences}). The label also becomes less informative independently of the base rate: recall minus the false-alarm rate (Youden's $J$) falls from .52 to .46, .25 and .15 (BM25-turn to the hybrid: $-.37$\ci{$-$.51}{$-$.22}).
+
+The other two labellers reproduce the decline. Qwen3-14B marks more contexts insufficient than phi-4 and so sits higher, but its precision falls in the same way (.84, .69, .29, .21). The blind audit gives .70, .62, .23 and .21; it matches phi-4 on BM25-fusion (.23 vs.\ .26 on the same 50 contexts) and is stricter on BM25-hist (.62 vs.\ .40). Item-level agreement is moderate: on the 250 audited contexts, Cohen's $\kappa$ \citep{cohen1960coefficient} is .38 between the audit and phi-4 and .49 between the audit and Qwen3-14B, and on all 4{,}290 contexts it is .44 between the two judges. Agreement is lower on the stronger retrievers, while raw agreement and Gwet's AC1 \citep{gwet2008computing} do not fall, which is consistent with part of the drop coming from the rising share of \cyes{} (Appendix~\ref{app:agreement}). We therefore rely on stage-level shares, on which all three labellers agree in direction. This agreement does not exclude a bias that all three share. Each sees the reference answer, and a tendency to credit on-topic documents that do not support the answer, such as hard negatives mined for the same thread, would raise \cyes{} more on stronger retrievers.
+
+Two checks bound parts of this effect. In a negative control, each turn is paired with the hybrid's top-5 for a turn of another dialogue in the same domain, with the turn's own gold removed. Qwen3-14B labels none of the 858 contexts \cyes{} or \cpart. The phi-4 judge labels 35 of them (4.1\%\ci{2.9}{5.2}) \cyes{} and 9 \cpart; 21 of the 35 are in earth science, and for 24 of them fewer than half of the rationale's words of six or more letters occur in the documents, so the support it names is mostly not in the documents. Correcting the false-miss rates for a leniency of this size changes them little (from 28\% to 25\% on BM25-turn and from 72\% to 70\% on the hybrid). The control excludes indiscriminate leniency but not leniency toward documents about the same question. On MTRAG, where annotators judged such passages, we test the judge against their judgments (\S\ref{sec:mtrag}).
+
+%=====================================================================
+\section{What a false miss contains}
+\label{sec:anatomy}
+%=====================================================================
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{fig_anatomy}
+\caption{Where the answer comes from in false misses (qrels \qnone, phi-4 \cyes), by the best evidence document named by the judge. ``Same-thread negative'': a document mined as a hard negative for the same question.}
+\label{fig:anatomy}
+\end{figure}
+
+For each false miss we take the evidence documents named by the judge and classify the best one by its relation to the turn's gold (Figure~\ref{fig:anatomy}). It can be a \emph{near-duplicate} of a gold document (word 8-gram containment $\geq .8$ or character 5-gram Jaccard $\geq .7$), the gold document of \emph{another turn} of the same dialogue, a chunk of the \emph{same source} page, a labelled negative from the dialogue's own candidate pool (\emph{same-thread negative}), or any \emph{other document}. The first four classes are tied to the dialogue. Document IDs are used here only for analysis; no model sees them.
+
+On both strong retrievers, 86\% of false misses are tied to the dialogue (BM25-fusion \ci{80}{92}, hybrid \ci{79}{92}). On BM25-fusion, 14\% are near-duplicates, 19\% gold of another turn, 13\% chunks of the same source and 41\% same-thread negatives. The two domain groups differ in mechanism. In the StackExchange domains, the released corpus contains for every dialogue its own pool of negative documents collected for that question, about 20--46 of one type and 280--420 web-search results per dialogue \citep{ali2026recor}. They carry the answer in 63\% of false misses on BM25-fusion and 69\% on the hybrid, and nearly all near-duplicates are such negatives that still contain a gold passage verbatim after this filtering. In the BRIGHT domains the evidence is more often another turn's gold (31--33\%) or a neighbouring chunk of the gold page (28--33\%). History-based queries retrieve earlier turns' gold more often, plausibly because the official history contains earlier turns' questions and reference answers: this class grows from 9\% of false misses on BM25-turn to 25\% on BM25-hist. The blind audit's own false misses fall into the same classes: 90\% (BM25-fusion) and 100\% (hybrid) of them are tied to the dialogue.
+
+Only part of this is specific to how RECOR's negatives were mined: same-thread negatives and near-duplicates of gold, nearly all of them mined negatives, account for 55\% of false misses on BM25-fusion (56\% on the hybrid). Gold of other turns (19\%) and chunks of the same source page (13\%) would arise in any multi-turn collection whose qrels are given per turn and per chunk, and the remaining 14\% are other documents that a sparse qrels file cannot anticipate.
+
+The four dialogue-tied classes also make up about three quarters of what the strong retrievers return in \qnone{} contexts (Appendix~\ref{app:tied}), so the dialogue tie shows where false misses sit on RECOR more than why they occur. Discounting every dialogue-tied false miss still leaves precision falling from .89\ci{.86}{.92} on BM25-turn to .45\ci{.26}{.64} on the hybrid (13 of 29 contexts).
+
+%=====================================================================
+\section{Consequences for abstention evaluation}
+\label{sec:consequences}
+%=====================================================================
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{fig_auroc}
+\caption{AUROC of each reader's $p(\textsc{answerable})$ for separating sufficient from insufficient contexts, under the qrels label (\textsc{all} vs.\ \qnone) and the two content labels (\cyes{} vs.\ \cno). Gold contexts are all sufficient under the qrels label. Numbers: content (phi-4) minus qrels difference, paired over bootstrap resamples of turns; bold if its 95\% CI excludes zero. Responses without a status line are excluded.}
+\label{fig:auroc}
+\end{figure*}
+
+\paragraph{Detector quality is understated.}
+Under the phi-4 content label, the AUROC of $p(\textsc{answerable})$ is significantly higher than under the qrels label for every reader at every retriever, except OCC on the two strongest retrievers (Figure~\ref{fig:auroc}); under the Qwen3-14B label, the only exception is OCC on the hybrid. For Qwen3-4B the gap widens with the retriever (+.10, +.13, +.14, +.19), consistent with the qrels label becoming noisier; OCC shows the opposite trend (+.08, +.09, +.01, $-.04$). The two labels drop different middle classes (\textsc{part} and \cpart), so the two AUROCs are computed on partly different contexts. On the contexts that are \textsc{all} or \qnone{} and also \cyes{} or \cno, the Qwen3-4B gap is +.08, +.09, +.13 and +.16\ci{.07}{.26}, so most of it comes from the label and not from which contexts are dropped. On the hybrid, the qrels label puts the three Qwen3 readers near chance (.50--.54), while under the content label Qwen3-4B reaches .72 and Qwen3-8B .68. OCC is the exception, with .58\ci{.53}{.64} under the qrels label against .54\ci{.45}{.62} under the content label. Comparisons between readers can change with the label (Appendix~\ref{app:audit-auroc}).
+
+\paragraph{The qrels label hides the 2b/2c contrast.}
+The question behind the 2b/2c pairing is whether a reader refuses more when its own retrieval failed than when it had the gold. Table~\ref{tab:contrast} in Appendix~\ref{app:sameturn} compares the refusal rate on insufficient retrieved contexts with the refusal rate on all sufficient gold contexts, pooled over turns. With the qrels label, this contrast is indistinguishable from zero already on BM25-hist for OCC and Qwen3-1.7B and on BM25-fusion for Qwen3-4B. For Qwen3-8B it turns significantly negative on BM25-fusion ($-$.04\ci{$-$.07}{$-$.01}), where the content-label contrast is not significant either (+.03\ci{$-$.03}{.11}), so for this reader both labels lose the gap at the same retriever. The content label still shows a significant contrast for OCC and Qwen3-1.7B on BM25-hist, for Qwen3-4B on BM25-fusion (+.20) and the hybrid (+.31), and for Qwen3-8B on the hybrid (+.11\ci{.01}{.22}), although this last contrast is not significant with Qwen3-14B as judge. Appendix~\ref{app:sameturn} rechecks the contrast with the second judge and with refusals read from an answer judge.
+
+The pooled comparison mixes turns, and readers refuse the gold of turns with failed retrieval more often than other gold (Appendix~\ref{app:sameturn}). Compared within turns, the content-label contrast stays significant on BM25-hist for three readers, where the qrels contrast is not. On the two strongest retrievers it is not significant for any reader (17--30 insufficient contexts per cell), while the qrels contrast turns significantly negative for three readers on BM25-fusion and all four on the hybrid, as if they refused less after a retrieval miss than with the gold of the same turn.
+
+\paragraph{Which detector looks best depends on the label.}
+Under the qrels label, a retrieval-confidence baseline that never reads the documents is the best insufficiency detector at every retriever except a hidden-state probe trained with the qrels label itself (on BM25-hist, the domain-$z$ top-1 score reaches .71 against .63 for the best reader; Table~\ref{tab:detectors} in Appendix~\ref{app:detectors} gives BM25-fusion and the hybrid). Under the content label, a reader's own $p(\textsc{answerable})$ has the highest AUROC at every retriever (Qwen3-4B .74 on BM25-hist, Figure~\ref{fig:auroc}), but on BM25-fusion and the hybrid its lead over the domain-$z$ top-1 score is not significant (Qwen3-4B minus top-1: $+.03$\ci{$-$.07}{.13} and $+.10$\ci{$-$.01}{.22}; with the Qwen3-14B judge the hybrid lead is $+.11$\ci{.01}{.20}). The difference between the domain-$z$ top-1 score and Qwen3-4B changes sign on BM25-turn (+.07 to $-.07$) and BM25-hist (+.11 to $-.17$), with all four intervals excluding zero. This is what one should expect: the qrels label records whether the retriever found the gold, and the retriever's own confidence predicts that best. Learned probes on OCC's hidden states behave the same way (Appendix~\ref{app:detectors}).
+
+\paragraph{How many conclusions change.}
+We enumerate the pairwise comparisons that an end-to-end study would report: refusal rates and AUROC between retrievers, between readers, and between sufficient and insufficient contexts, plus the terms of a decomposition of refusal changes (Appendix~\ref{app:kitagawa}). For two readers and the three BM25 retrievers, 17 of 87 comparisons change sign or significance between labels; for all four readers and four retrievers, 100 of 384 do, 23 of them by sign (101 and 19 with Qwen3-14B as the content label). As a reference, swapping one content judge for the other (phi-4 against Qwen3-14B, same rule) changes 51 of the 384, only 2 of them by sign. Of the 13 refusal-based changes that an answer judge can check, 7 survive with Qwen3-8B as judge and 12 with phi-4. Changing the judge alone thus produces about half as many changes, almost all in significance, whereas sign changes are specific to the qrels label.
+
+%=====================================================================
+\section{Replication on MTRAG}
+\label{sec:mtrag}
+%=====================================================================
+
+\input{tables/tab_mtrag}
+
+MTRAG \citep{katsis2025mtrag} builds its qrels differently from RECOR. Annotators held each conversation with a live RAG agent backed by an ELSER retriever, checked the passages it retrieved and could search for others; the passages they marked relevant are the qrels, and the reference answers are model responses that the annotators repaired. There are no mined negatives, and the four corpora are split into overlapping 512-token chunks. We use five first-stage retrievers, from BM25 over all user questions to a dense retriever (Qwen3-Embedding-0.6B, \citealp{zhang2025qwen3embedding}) over MTRAG's rewritten question (Table~\ref{tab:mtrag}), on the 777 answerable and partially answerable turns that have qrels; since MTRAG has no training split, all settings were fixed in advance. phi-4 labels every top-5 context as on RECOR, with MTRAG's reference answer.
+
+The decline replicates on a shorter ladder (Table~\ref{tab:mtrag}). Precision of ``no gold'' falls from .72 on the BM25 retrievers over the questions and the last turn to .50 on the dense and hybrid retrievers (dense minus BM25 over all questions: $-.22$\ci{$-$.29}{$-$.16}), and false misses rise from 23\% to 38--40\%.
+
+MTRAG also records which of the passages shown to the annotators they marked not relevant, which allows a human check of the judge. Judged one passage at a time against the reference answer, gold passages of answerable turns are labelled \cyes{} in 59\% of cases and \cyes{} or \cpart{} in 91\%; passages that the annotators rejected for the same turn are labelled \cyes{} in 8\%\ci{6}{11} and \cyes{} or \cpart{} in 19\%. The judge thus rarely credits on-topic passages that humans rejected, and almost no false miss rests on such passages: in the \qnone{} contexts of the dense retriever, 2.7\% of the top-5 passages were rejected by the annotators for that turn, and 1 of the 109 false misses rests only on rejected passages. Of the 109, 29 cite the gold of another turn of the same conversation, 21 another chunk of a gold passage's source document, and 56 only passages that the annotators never saw for that turn.
+
+The consequences for Qwen3-4B also replicate. Its answerability AUROC is understated by the qrels label, and more so on stronger retrievers: the gap to the content label is +.01 and +.05 on BM25 over the questions and the last turn (not significant), and +.08, +.10\ci{.03}{.16} and +.07\ci{.01}{.13} on BM25 over the rewrite, the hybrid and the dense retriever. On the hybrid, its within-turn 2b/2c contrast is not significant under the qrels label (+.02\ci{$-$.04}{.09}) but is under the content label (+.10\ci{.01}{.19}); on the dense retriever neither is (+.01 and +.02). OCC shows no significant AUROC gap on any retriever, as on the two strongest RECOR retrievers. As on RECOR, responses without a status line are excluded (for Qwen3-4B 13--21\% of contexts, more often \cyes{} ones; Appendix~\ref{app:repro}).
+
+%=====================================================================
+\section{Conclusion and recommendations}
+\label{sec:recs}
+%=====================================================================
+
+On both benchmarks, the precision of ``no gold'' as a label of insufficient context falls as retrievers improve, which distorts the comparisons that end-to-end abstention evaluation is built for. We recommend:
+
+\begin{enumerate}
+\item \textbf{Do not compare abstention across retrievers, or select sufficiency detectors, under a qrels-derived label.} If the proxy must be used, report its precision on an audited sample for each retriever.
+\item \textbf{Label sufficiency by content for each retrieved context,} with judges from more than one model family and human judgments as a check where they exist (\S\ref{sec:mtrag}).
+\item \textbf{Deduplicate negatives against gold, and check qrels across turns and chunks of the same document} (\S\ref{sec:anatomy}, \S\ref{sec:mtrag}).
+\item \textbf{Report abstention conditionally on sufficiency,} and state the retriever.
+\end{enumerate}
+
+%=====================================================================
+\section*{Limitations}
+%=====================================================================
+
+\paragraph{LLM labels.} Sufficiency is labelled by two open LLM judges, and the blind audit uses a third model family rather than human annotators. The three labellers agree on the direction of the stage-level trends; item-level agreement is moderate ($\kappa$ .38--.49 on the audited contexts and lower on the strongest retrievers; Appendix~\ref{app:agreement}), so we draw conclusions from stage-level shares rather than from individual contexts, and rankings of readers by AUROC can depend on the labeller (Appendix~\ref{app:audit-auroc}). Since all labellers see the reference answer, a shared leniency toward on-topic documents would inflate the content label on stronger retrievers. Two checks address this: phi-4 labels 4\% and Qwen3-14B none of the contexts taken from other dialogues as sufficient (\S\ref{sec:bias}), and on MTRAG the judge rarely credits passages that annotators rejected (\S\ref{sec:mtrag}). Passages that no annotator saw, where most false misses lie, have no human check yet; a human sample of them is the natural next step. Finally, the dialogue history includes earlier reference answers. The audit marks 35 of its 250 contexts as answered in the history while phi-4 almost never does, so some contexts labelled insufficient may be answerable from the history.
+
+\paragraph{Scope.} The main benchmark is RECOR dev (858 turns, 211 dialogues), where part of the bias comes from how negatives were mined. MTRAG, which has no mined negatives, shows the same retriever dependence with one judge and two readers, on a ladder up to nDCG@10 .42. The four readers are Qwen3-based models of 1.7B--8B parameters. The query expansions of BM25-fusion and the hybrid were generated by Claude Sonnet~5 (Appendix~\ref{app:retrieval}), of the same family as the auditor, so the audit is independent of the judges and readers but not of how these two retrievers selected their contexts.
+
+\paragraph{Multiplicity.} We report many comparisons without correction. The counts of changed conclusions (\S\ref{sec:consequences}) come from dependent comparisons and indicate scale rather than significance; we mark which results survive a change of the refusal definition and give the within-turn 2b/2c contrast in Appendix~\ref{app:sameturn}.
+
+\section*{Ethics Statement}
+We use publicly released benchmark data under its license. Content labels and audits were produced by LLMs; no crowd workers were involved.
+
+\bibliography{custom}
+
+\appendix
+
+\section{Retrieval system (task 2a)}
+\label{app:retrieval}
+
+\begin{table}[ht]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabularx}{\columnwidth}{@{}>{\raggedright\arraybackslash}Xccc@{}}
+\toprule
+System & dev & R@100 & train \\
+\midrule
+BM25, turn only & .183 & .556 & .184 \\
+BM25, turn + history (baseline) & .438 & .822 & .454 \\
+\quad + LLM rewrite & .450 & .847 & .463 \\
+\quad + HyDE passage & .480 & .870 & .499 \\
+\quad + Query2doc passage & .546 & .916 & .558 \\
+\quad fusion of three expansions & .550 & .920 & .561 \\
+\quad Query2doc by an open LLM & .453 & -- & .473 \\
+\midrule
+Diver-4B, Query2doc & .545 & .951 & .577 \\
+reason-embed-4B, history & .548 & .946 & .577 \\
+reason-embed-4B, Query2doc & .566 & .957 & .602 \\
+reason-embed-4B, open-LLM Query2doc & .520 & -- & .550 \\
+\midrule
+Hybrid: fusion + reason-embed (submitted) & \textbf{.591} & .970 & .620 \\
+Hybrid: fusion + Diver & .586 & .975 & .612 \\
+\midrule
+Fusion $\to$ Qwen3-Reranker-4B & .457 & -- & -- \\
+Fusion $\to$ ReasonRank-7B & .509 & -- & -- \\
+\bottomrule
+\end{tabularx}
+\caption{nDCG@10 on RECOR (macro over 11 domains) and dev recall@100. All fusion weights and the submitted system were selected on train. The official scorer gives .592 for the submitted run. The strongest leakage-free system reported with the dataset reaches .545 on the full 2{,}971-turn set \citep{ali2026recor}, which is not directly comparable to dev. Dense retrievers: reason-embed \citep{chen2026reasonembed} and Diver \citep{sun2025diver}; rerankers: Qwen3-Reranker \citep{zhang2025qwen3embedding} and ReasonRank \citep{liu2026reasonrank}. Rerankers help in StackExchange domains and hurt in BRIGHT domains (Appendix~\ref{app:rerank}).}
+\label{tab:retrieval}
+\end{table}
+
+Query expansions (rewrite, HyDE and Query2doc passages) were generated by Claude Sonnet~5 with low reasoning effort, in batches of ten turns, from the turn and its official history only. To bound the contribution of a proprietary model, we regenerated the Query2doc passages with Qwen3-4B-Instruct-2507: they give .453 with BM25 and .520 with reason-embed (against .546 and .566), and reason-embed with the plain history and no LLM expansion reaches .548. No system sees the current turn's reference answer, document IDs or future turns; earlier turns' reference answers reach systems only through the official history.
+
+\section{Rerankers and qrels holes}
+\label{app:rerank}
+Reranking the fusion top-100 lowers macro nDCG@10 (Qwen3-Reranker-4B $-.092$\ci{$-$.121}{$-$.065}, ReasonRank-7B $-.041$\ci{$-$.062}{$-$.017}). The loss is confined to the BRIGHT domains ($-.168$ and $-.135$), while ReasonRank gains $+.072$\ci{.038}{.105} in the StackExchange domains. Across the 11 domains the change for Qwen3-Reranker does not correlate with the rate of qrels holes estimated by the judge (Spearman $\rho=.02$, permutation $p=.96$; ReasonRank: $\rho=.04$, $p=.91$) but does with first-stage strength ($\rho=-.87$; ReasonRank: $\rho=-.93$), which is confounded with the domain group. Counting near-duplicates and same-page chunks of gold as relevant reduces the BRIGHT loss by 35--40\% without removing it.
+
+\section{Experimental details and reproducibility}
+\label{app:repro}
+
+\paragraph{What was run.} All model inference ran in Google Colab on single NVIDIA A100 (40 or 80\,GB) or L4 GPUs with vLLM~0.31 in bfloat16; analysis ran on a laptop CPU from the saved outputs. Table~\ref{tab:inventory} lists every model call that the results rest on.
+
+\begin{table}[ht]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabularx}{\columnwidth}{@{}Xr@{}}
+\toprule
+Experiment & outputs \\
+\midrule
+Retrieval runs, top-100, 11 domains (dev + train) & 4 ladder stages \\
+Reader responses: 4 readers $\times$ 858 turns $\times$ 6 contexts\textsuperscript{a} & 20{,}592 \\
+Sufficiency labels: 2 judges $\times$ 858 turns $\times$ 5 contexts\textsuperscript{b} & 8{,}580 \\
+Negative control (\S\ref{sec:bias}): 2 judges $\times$ 858 turns & 1{,}716 \\
+MTRAG labels: phi-4 $\times$ 777 turns $\times$ 6 contexts, plus single passages & 4{,}662 + 2{,}724 \\
+MTRAG reader responses: 2 readers $\times$ (777 turns $\times$ 6 contexts + 55 unanswerable turns) & 9{,}434 \\
+Blind audit: 250 contexts $\times$ 2 runs, plus adjudication of disagreements & 500 + 7 \\
+Answer-quality judgments: 2 judges $\times$ 2 readers $\times$ 858 turns $\times$ 5 contexts\textsuperscript{c} & 17{,}160 \\
+Detector transfer: OCC on SQuAD~2.0 and MuSiQue, and on RECOR train contexts & 2{,}000 + 4{,}226 \\
+\bottomrule
+\end{tabularx}
+\caption{Inventory of model outputs. \textsuperscript{a}Gold (2b), no documents (a control not analysed here), and the top-5 of each of the four retrievers. \textsuperscript{b}Gold and the top-5 of each of the four retrievers. \textsuperscript{c}Gold, no documents, and the top-5 of the three BM25 retrievers (OCC and Qwen3-4B).}
+\label{tab:inventory}
+\end{table}
+
+{\raggedright
+\paragraph{Models.} Hugging Face identifiers: \texttt{occ-ai/OCC-RAG-1.7B}, \texttt{Qwen/Qwen3-1.7B}, \texttt{Qwen/Qwen3-4B-Instruct-2507}, \texttt{Qwen/Qwen3-8B} (readers); \texttt{microsoft/phi-4}, \texttt{Qwen/Qwen3-14B} (judges); \texttt{hanhainebula/reason-embed-qwen3-4b-0928} \citep{chen2026reasonembed}, \texttt{AQ-MedAI/Diver-Retriever-4B} \citep{sun2025diver} (dense retrieval), \texttt{Qwen/Qwen3-Embedding-0.6B} (dense retrieval on MTRAG); \texttt{Qwen/Qwen3-Reranker-4B} \citep{zhang2025qwen3embedding} and ReasonRank-7B \citep{liu2026reasonrank} (rerankers). Qwen3 models run with thinking disabled. The audit used Claude Opus~5.5.
+\par}
+
+\paragraph{Settings.} Greedy decoding everywhere. Readers: context of at most 16{,}384 tokens and 1{,}200 new tokens; if a prompt does not fit, each document is cut to 300 words. Judges: same context limit, 400 new tokens. BM25 uses the task kit's implementation ($k_1{=}0.9$, $b{=}0.4$). The hybrid mixes min-max normalised BM25-fusion and dense scores with dense weight $0.7$, chosen on train together with all fusion weights. On MTRAG (benchmark repository at commit \texttt{53fef6f}), BM25 uses bm25s with the same $k_1$ and $b$, passages are cut to 512 tokens for the embedder, and the hybrid weights BM25 and dense scores equally. Bootstrap: 1{,}000 resamples, seed 0 (on MTRAG stratified by domain, except the single-passage check, which resamples turns with their passages); vLLM seed 0. The 55 unanswerable MTRAG turns were answered from the hybrid's top-5 but are not analysed here. On MTRAG, Qwen3-4B gives no status line on 104--167 of the 777 retrieved contexts per retriever and on 182 gold contexts, more often on \cyes{} than on \cno{} contexts (25\% against 12\% on the hybrid); OCC omits it on 33--51. Resampling dialogues instead of turns moves the bounds of the precision intervals by up to .03 (phi-4, hybrid: [.04, .18] instead of [.05, .16]) and those of the false-miss intervals by up to .02; intervals of adjacent retrievers that are disjoint under the turn bootstrap remain disjoint.
+
+{\raggedright
+\paragraph{Provenance of reported numbers.} Each table and figure is produced by one script in \texttt{docs/paper/scripts} from the released files: Table~\ref{tab:bias}, Table~\ref{tab:agreement} and Figure~\ref{fig:bias} by \texttt{label\_v2.py}; Figure~\ref{fig:anatomy} and the base rates of dialogue-tied documents by \texttt{false\_miss\_anatomy\_v2.py}; Figure~\ref{fig:auroc}, Table~\ref{tab:contrast}, Table~\ref{tab:sameturn}, the common-set AUROC and the flip counts, including the judge-swap reference, by \texttt{consequences\_v2.py}; Table~\ref{tab:audit-auroc} from the output of \texttt{refusal\_flips.py}; Table~\ref{tab:detectors} by \texttt{baselines\_v2.py}; the negative control by \texttt{control\_v2.py}; Table~\ref{tab:mtrag} from the summary written by the MTRAG notebook, and the MTRAG evidence classes by \texttt{mtrag\_v2.py}; LaTeX tables are written by \texttt{tables\_v2.py} and figures by \texttt{paper\_figs.py}; the audit numbers by \texttt{audit\_build.py} and \texttt{audit2\_collect.py}; Table~\ref{tab:retrieval} by the evaluation cell of the analysis notebook with the official scorer. Each released run comes with the \texttt{config.json} written when it was produced, which records its settings and, for model inference, the GPU and date.
+\par}
+
+\section{Prompts}
+\label{app:prompts}
+
+\paragraph{Sufficiency judge.} Both judges (phi-4, Qwen3-14B) receive the same prompt, greedy decoding, at most 400 new tokens. System message:
+\begin{quote}\small\ttfamily\raggedright
+You are a careful annotator for a conversational question answering benchmark. You decide whether a set of documents contains the information needed to answer a question. You judge only by what the documents say, never by your own knowledge.
+\end{quote}
+User message: the conversation so far, the latest question, the reference answer (``written by an expert; use it only to know what the correct answer says''; this wording is inaccurate, as RECOR reference answers are generated by GPT-4.1 \citep{ali2026recor}), the numbered documents, and the instruction:
+\begin{quote}\small\ttfamily\raggedright
+Decide whether the DOCUMENTS contain the information needed for the core claim(s) of the reference answer to the latest question.\\
+Labels:\\
+- "yes": the documents support the core claim(s) of the reference answer for the latest question. Missing minor details, examples or exact wording is fine.\\
+- "partial": the documents support at least one core point, but a central part of the answer is missing.\\
+- "no": the documents do not contain the answer. Text on the same topic, or text that only restates the question, without the actual answer counts as "no".\\
+Rules:\\
+- Judge only by the documents, not by your own knowledge.\\
+- The earlier conversation is not evidence: if the answer appears only there and not in the documents, it does not count.\\
+- answered\_in\_history: true if the earlier conversation already states the answer to the latest question, otherwise false.\\
+- evidence\_docs: the numbers of the documents that support the answer; an empty list if none.\\
+Return only a JSON object with keys in this order: \{"rationale": "<at most 2 sentences>", "label": "yes" | "partial" | "no", "answered\_in\_history": true | false, "evidence\_docs": [<document numbers>]\}
+\end{quote}
+The blind audit used the same three labels with the same definitions; one run read each item holistically, the other first listed the key claims of the reference answer and checked each against each document.
+
+\paragraph{Readers.} OCC-RAG-1.7B is used with its own chat template, which places the documents in the last user turn and produces a reasoning trace followed by a status token. The other readers receive the dialogue history as chat turns and this system message:
+\begin{quote}\small\ttfamily\raggedright
+You are a helpful assistant in a multi-turn conversation. Answer the user's latest message using only the numbered documents attached to it.\\
+Reply in this format:\\
+Line 1: ANSWERABLE if the documents contain enough information to answer, otherwise UNANSWERABLE.\\
+Next lines: if ANSWERABLE, the answer in 2-5 sentences in a natural conversational tone; if UNANSWERABLE, say briefly what information is missing.
+\end{quote}
+
+\section{Treatment of \textit{partial}}
+\label{app:partial}
+Precision of \qnone{} along BM25-turn, BM25-hist, BM25-fusion and the hybrid (phi-4) is .72, .55, .32, .28 when \cpart{} counts as insufficient and .61, .36, .15, .08 when it counts as sufficient (Qwen3-14B: .86, .76, .48, .42 and .71, .54, .22, .15). If \cpart{} also counts as a false miss, the false-miss share rises as .39, .64, .85, .92 (Qwen3-14B: .29, .46, .78, .85). Both trends hold under either convention. The share ratio does not. With \cpart{} counted as insufficient, phi-4 marks 55.1, 31.9, 18.3 and 17.1\% of contexts insufficient against 71.6, 35.0, 22.7 and 18.4\% without gold (ratio 1.30, 1.09, 1.24, 1.07$\times$). Qwen3-14B marks 71.6, 50.0, 35.1 and 29.8\% (ratio 1.00, .70, .65, .62$\times$). Under this convention, the qrels label overstates insufficiency only slightly under phi-4 and understates it under Qwen3-14B on the three stronger retrievers.
+
+\section{Gold present but insufficient}
+\label{app:reverse}
+Among contexts that phi-4 judges \cno, the share that still contains at least one gold document grows along the ladder: 11 of 386 on BM25-turn, 49 of 157 on BM25-hist, 38 of 68 on BM25-fusion and 29 of 42 on the hybrid; in 29 and 24 of the last two, all gold documents of the turn are in the context. The gold contexts themselves are not always sufficient by this standard: phi-4 labels 59 of 858 gold (2b) contexts \cno{} and Qwen3-14B 56. These are cases where the reference answer goes beyond its gold documents, or judge errors.
+
+\section{Agreement between labellers}
+\label{app:agreement}
+Table~\ref{tab:agreement} gives item-level agreement for each pair of labellers and between the two audit runs, and the confusion matrix of the blind audit against phi-4. Per retriever, from BM25-turn to the hybrid, $\kappa$ between the two judges is .55, .41, .28 and .30 (858 contexts each), and between the audit and phi-4 it is .45, .28, .22 and .25. Raw agreement between the judges (.73, .66, .69, .73) and Gwet's AC1 (\citealp{gwet2008computing}; .61, .52, .60, .66) do not fall, which is consistent with part of the drop in $\kappa$ coming from the rising share of \cyes.
+\input{tables/tab_agreement}
+
+\section{Dialogue-tied documents among all retrieved documents}
+\label{app:tied}
+Of all top-5 documents in \qnone{} contexts, 74\% (BM25-fusion) and 72\% (hybrid) are tied to the dialogue, against 79\% and 80\% of the evidence documents, and 95\% and 90\% of \qnone{} contexts contain at least one tied document. Per document, a tied document is named as evidence somewhat more often than an other document (.33 against .25 on BM25-fusion, .44 against .28 on the hybrid), and near-duplicates of gold are the clearest construction artefact (half of those retrieved on BM25-fusion are evidence). The 14\% of false misses that rest on other documents is therefore not an estimate for collections built differently.
+
+\section{Reader comparisons under the two labels}
+\label{app:audit-auroc}
+The ranking of readers by the AUROC of $p$(\textnormal{\textsc{answerable}}) can change with the label. On all hybrid contexts, under the qrels label Qwen3-4B is no better than OCC ($-.05$\ci{$-$.11}{.02}); under the content label it is better by .18\ci{.06}{.31} with phi-4 and by .14 with Qwen3-14B (95\% CI excluding zero). We give this as an example of label dependence, not as a finding about the readers. On BM25-fusion, Qwen3-14B does not reproduce the gap (+.05\ci{$-$.02}{.12}), and on the 100 audited BM25-fusion contexts the blind audit points the other way ($-.18$\ci{$-$.41}{.01}, against +.15\ci{$-$.05}{.37} for phi-4 on the same contexts). We have no audit-based AUROC for the hybrid. Table~\ref{tab:audit-auroc} compares the AUROC of OCC and Qwen3-4B on the 100 audited BM25-fusion contexts (50 \qnone, 50 \textsc{all}). Only 15 of these contexts are \cno{} under phi-4 and 9 under the audit, so the intervals are wide, and the sign of the difference depends on the content labeller.
+
+\input{tables/tab_audit_auroc}
+
+\section{The 2b/2c contrast in detail}
+\label{app:sameturn}
+Table~\ref{tab:contrast} gives the pooled contrast discussed in \S\ref{sec:consequences}.
+
+\input{tables/tab_contrast}
+
+\paragraph{Second judge and answer judge.} For OCC, the pooled contrast of Table~\ref{tab:contrast} is near zero on BM25-fusion and the hybrid under both the qrels label and the phi-4 content label, but with the Qwen3-14B content label it stays positive on BM25-fusion (+.13\ci{.01}{.24}) and the hybrid (+.17\ci{.04}{.30}), so whether OCC's abstention there carries signal depends on the judge. Where an answer judge is available (OCC and Qwen3-4B on the BM25 retrievers), the two contrasts of Table~\ref{tab:contrast} that are significant under the content label only and that it can check (OCC on BM25-hist and Qwen3-4B on BM25-fusion) remain significant when refusals are read from the judge instead of the status line. For Qwen3-4B on BM25-fusion with the Qwen3-8B judge, however, the pattern changes: the content-label contrast is no longer significant (+.05\ci{$-$.04}{.15}), and the qrels contrast becomes significantly negative ($-.05$\ci{$-$.10}{$-$.00}).
+
+\paragraph{Within-turn contrast.} Table~\ref{tab:sameturn} repeats the contrast with both refusal rates taken on the same turns: those whose retrieved context is insufficient and whose gold context is sufficient under the label in question. The turns on which retrieval fails are harder: on the hybrid, Qwen3-4B refuses 41\% of the sufficient gold contexts of these turns, against 26\% of all sufficient gold contexts. Within turns, the content-label contrast on BM25-hist is +.12, +.22 and +.17 for Qwen3-1.7B, Qwen3-4B and Qwen3-8B and +.02\ci{$-$.11}{.13} for OCC; on BM25-fusion and the hybrid, Qwen3-4B's is +.04\ci{$-$.19}{.25} and +.24\ci{.00}{.50}. With Qwen3-14B as the content judge, and with refusals read from an answer judge, no within-turn content-label contrast on BM25-fusion or the hybrid is significant either. The qrels contrast becomes significantly negative on BM25-fusion and the hybrid for OCC, Qwen3-4B and Qwen3-8B, on the hybrid also for Qwen3-1.7B, and on BM25-hist for OCC ($-$.13\ci{$-$.21}{$-$.06}). Under both the pooled and the within-turn definition, the content-label contrast significantly exceeds the qrels contrast on BM25-hist for all four readers.
+
+\input{tables/tab_sameturn}
+
+\section{Detectors under the two labels}
+\label{app:detectors}
+Table~\ref{tab:detectors} lists the AUROC of retrieval-score baselines, readers' $p$(\textnormal{\textsc{answerable}}) and hidden-state probes on BM25-fusion and the hybrid under both labels. A probe on OCC's hidden states trained on RECOR train with the qrels label is the best detector under that label on BM25-fusion (.69, above every retrieval score) and falls to chance under the content label (.51); a probe trained on SQuAD~2.0 and MuSiQue drops from .59 to .48.
+
+\input{tables/tab_detectors}
+
+\section{Why refusals fall with better retrieval}
+\label{app:kitagawa}
+From BM25-turn to BM25-fusion, the refusal rate drops from 65\% to 38\% for OCC and from 45\% to 23\% for Qwen3-4B. A Kitagawa decomposition \citep{kitagawa1955components} splits the change into a \emph{composition} term (fewer insufficient contexts) and a \emph{rate} term (different refusal rates within each label class). For OCC, composition explains 39\% of the drop under both the qrels label and the phi-4 content label, and 56\% under the Qwen3-14B content label. For Qwen3-4B the split depends on the label. From BM25-turn to BM25-fusion, composition explains 48\% of the drop under the qrels label and 69\% under the content label, and $|\text{composition}|-|\text{rate}|$ changes sign from $-.01$\ci{$-$.07}{.05} to $+.08$\ci{.02}{.15}; from BM25-turn to the hybrid, composition explains 44\% and 79\%. Under the qrels label, composition and rate contribute about equally; under the content label, most of the drop comes from there being fewer insufficient contexts.
+
+\end{document}
