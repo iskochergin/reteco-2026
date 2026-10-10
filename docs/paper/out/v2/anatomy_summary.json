@@ -1,0 +1,1267 @@
+{
+ "definitions": {
+  "false_miss": "suff_qrels == none (no qrels gold in top-5 context) and judge label == yes",
+  "classes": "classes and priority near_dup > other_turn > same_source > independent; independent split into pool_neg (labelled negative from the dialogue's own pool: SE _neg_/_google_neg_ of the same ex_N, BRIGHT same question folder) and other (gold of another dialogue + rest); context class = best among its evidence docs; yes without evidence docs -> other",
+  "near_dup": "word 8-gram containment >= 0.8 or char 5-gram Jaccard >= 0.7 vs a gold doc of the turn",
+  "bootstrap": "over 858 dev turns, 1000 resamples, seed 0, 95% percentile CI; audits: over audited items",
+  "judges": "phi-4 primary; Qwen3-14B included per stage only when its file has 858 lines"
+ },
+ "judges_used": {
+  "phi-4": [
+   "BM25-turn",
+   "BM25-hist",
+   "Fusion",
+   "Hybrid"
+  ],
+  "Qwen3-14B": [
+   "BM25-turn",
+   "BM25-hist",
+   "Fusion",
+   "Hybrid"
+  ]
+ },
+ "stages": {
+  "BM25-turn": {
+   "run": "bm25_query_dev",
+   "ndcg10_macro": 0.1827,
+   "phi-4": {
+    "false_miss": 173,
+    "none": 614,
+    "none_labels": {
+     "no": 375,
+     "yes": 173,
+     "partial": 66
+    },
+    "false_miss_rate_among_none": {
+     "share": 0.2818,
+     "lo": 0.2459,
+     "hi": 0.317,
+     "k": 173,
+     "n": 614
+    },
+    "false_miss_rate_among_none_yes_or_no": {
+     "share": 0.3157,
+     "lo": 0.275,
+     "hi": 0.3526,
+     "k": 173,
+     "n": 548
+    },
+    "no_evidence": 1,
+    "invalid_evidence_indices": 0,
+    "tied_to_dialogue": {
+     "share": 0.7283,
+     "lo": 0.6584,
+     "hi": 0.7937,
+     "k": 126,
+     "n": 173
+    },
+    "context_eq_top5": "858/858",
+    "doc_level": {
+     "n_docs": 321,
+     "classes": {
+      "other": 101,
+      "near_dup": 11,
+      "pool_neg": 149,
+      "other_turn": 15,
+      "same_source": 45
+     },
+     "near_dup": {
+      "n": 11,
+      "gold_inside_ev": 7,
+      "ev_inside_gold": 4,
+      "jaccard_hits": 0,
+      "doc_type": {
+       "neg": 7,
+       "bright": 4
+      }
+     }
+    },
+    "base_rate": {
+     "definition": "all top-5 docs of qrels-none contexts, v2 classes (gold_elsewhere counted as other); evidence = judge evidence_docs in its false misses (label yes); evidence_rate = evidence docs of a class / all docs of that class; tied = any class except other",
+     "n_none_contexts": 614,
+     "n_docs": 3070,
+     "n_evidence_docs": 321,
+     "docs_by_class": {
+      "near_dup": 20,
+      "other_turn": 47,
+      "same_source": 172,
+      "pool_neg": 799,
+      "other": 2032
+     },
+     "docs_by_class_group": {
+      "StackExchange": {
+       "near_dup": 10,
+       "other_turn": 12,
+       "same_source": 11,
+       "pool_neg": 408,
+       "other": 514
+      },
+      "BRIGHT": {
+       "near_dup": 10,
+       "other_turn": 35,
+       "same_source": 161,
+       "pool_neg": 391,
+       "other": 1518
+      }
+     },
+     "evidence_by_class": {
+      "near_dup": 11,
+      "other_turn": 15,
+      "same_source": 45,
+      "pool_neg": 149,
+      "other": 101
+     },
+     "tied_share_of_docs": 0.3381,
+     "tied_share_of_evidence": 0.6854,
+     "evidence_rate": {
+      "near_dup": 0.55,
+      "other_turn": 0.3191,
+      "same_source": 0.2616,
+      "pool_neg": 0.1865,
+      "other": 0.0497
+     },
+     "evidence_rate_tied": 0.2119,
+     "evidence_rate_untied": 0.0497,
+     "none_ctx_with_tied_doc": {
+      "share": 0.5717,
+      "lo": 0.5302,
+      "hi": 0.6124,
+      "k": 351,
+      "n": 614
+     },
+     "none_ctx_with_tied_doc_by_group": {
+      "StackExchange": {
+       "k": 140,
+       "n": 191,
+       "share": 0.733
+      },
+      "BRIGHT": {
+       "k": 211,
+       "n": 423,
+       "share": 0.4988
+      }
+     },
+     "precision_raw": {
+      "share": 0.6843,
+      "lo": 0.6474,
+      "hi": 0.725,
+      "k": 375,
+      "n": 548
+     },
+     "precision_untied_fm_only": {
+      "share": 0.8886,
+      "lo": 0.8587,
+      "hi": 0.9171,
+      "k": 375,
+      "n": 422
+     },
+     "n_no": 375,
+     "n_false_miss": 173,
+     "n_false_miss_untied": 47
+    }
+   },
+   "Qwen3-14B": {
+    "false_miss": 83,
+    "none": 614,
+    "none_labels": {
+     "no": 438,
+     "yes": 83,
+     "partial": 93
+    },
+    "false_miss_rate_among_none": {
+     "share": 0.1352,
+     "lo": 0.1089,
+     "hi": 0.162,
+     "k": 83,
+     "n": 614
+    },
+    "false_miss_rate_among_none_yes_or_no": {
+     "share": 0.1593,
+     "lo": 0.1295,
+     "hi": 0.1901,
+     "k": 83,
+     "n": 521
+    },
+    "no_evidence": 0,
+    "invalid_evidence_indices": 0,
+    "tied_to_dialogue": {
+     "share": 0.747,
+     "lo": 0.6521,
+     "hi": 0.8348,
+     "k": 62,
+     "n": 83
+    },
+    "context_eq_top5": "858/858",
+    "doc_level": {
+     "n_docs": 168,
+     "classes": {
+      "other": 54,
+      "near_dup": 10,
+      "pool_neg": 71,
+      "same_source": 24,
+      "other_turn": 9
+     },
+     "near_dup": {
+      "n": 10,
+      "gold_inside_ev": 7,
+      "ev_inside_gold": 3,
+      "jaccard_hits": 0,
+      "doc_type": {
+       "neg": 7,
+       "bright": 3
+      }
+     }
+    },
+    "base_rate": {
+     "definition": "all top-5 docs of qrels-none contexts, v2 classes (gold_elsewhere counted as other); evidence = judge evidence_docs in its false misses (label yes); evidence_rate = evidence docs of a class / all docs of that class; tied = any class except other",
+     "n_none_contexts": 614,
+     "n_docs": 3070,
+     "n_evidence_docs": 168,
+     "docs_by_class": {
+      "near_dup": 20,
+      "other_turn": 47,
+      "same_source": 172,
+      "pool_neg": 799,
+      "other": 2032
+     },
+     "docs_by_class_group": {
+      "StackExchange": {
+       "near_dup": 10,
+       "other_turn": 12,
+       "same_source": 11,
+       "pool_neg": 408,
+       "other": 514
+      },
+      "BRIGHT": {
+       "near_dup": 10,
+       "other_turn": 35,
+       "same_source": 161,
+       "pool_neg": 391,
+       "other": 1518
+      }
+     },
+     "evidence_by_class": {
+      "near_dup": 10,
+      "other_turn": 9,
+      "same_source": 24,
+      "pool_neg": 71,
+      "other": 54
+     },
+     "tied_share_of_docs": 0.3381,
+     "tied_share_of_evidence": 0.6786,
+     "evidence_rate": {
+      "near_dup": 0.5,
+      "other_turn": 0.1915,
+      "same_source": 0.1395,
+      "pool_neg": 0.0889,
+      "other": 0.0266
+     },
+     "evidence_rate_tied": 0.1098,
+     "evidence_rate_untied": 0.0266,
+     "none_ctx_with_tied_doc": {
+      "share": 0.5717,
+      "lo": 0.5302,
+      "hi": 0.6124,
+      "k": 351,
+      "n": 614
+     },
+     "none_ctx_with_tied_doc_by_group": {
+      "StackExchange": {
+       "k": 140,
+       "n": 191,
+       "share": 0.733
+      },
+      "BRIGHT": {
+       "k": 211,
+       "n": 423,
+       "share": 0.4988
+      }
+     },
+     "precision_raw": {
+      "share": 0.8407,
+      "lo": 0.8099,
+      "hi": 0.8705,
+      "k": 438,
+      "n": 521
+     },
+     "precision_untied_fm_only": {
+      "share": 0.9542,
+      "lo": 0.9351,
+      "hi": 0.9718,
+      "k": 438,
+      "n": 459
+     },
+     "n_no": 438,
+     "n_false_miss": 83,
+     "n_false_miss_untied": 21
+    }
+   }
+  },
+  "BM25-hist": {
+   "run": "bm25_hist_dev",
+   "ndcg10_macro": 0.4379,
+   "phi-4": {
+    "false_miss": 135,
+    "none": 300,
+    "none_labels": {
+     "partial": 57,
+     "yes": 135,
+     "no": 108
+    },
+    "false_miss_rate_among_none": {
+     "share": 0.45,
+     "lo": 0.3945,
+     "hi": 0.5069,
+     "k": 135,
+     "n": 300
+    },
+    "false_miss_rate_among_none_yes_or_no": {
+     "share": 0.5556,
+     "lo": 0.4939,
+     "hi": 0.6207,
+     "k": 135,
+     "n": 243
+    },
+    "no_evidence": 0,
+    "invalid_evidence_indices": 0,
+    "tied_to_dialogue": {
+     "share": 0.8741,
+     "lo": 0.8194,
+     "hi": 0.9268,
+     "k": 118,
+     "n": 135
+    },
+    "context_eq_top5": "858/858",
+    "doc_level": {
+     "n_docs": 242,
+     "classes": {
+      "other": 49,
+      "near_dup": 10,
+      "pool_neg": 117,
+      "other_turn": 40,
+      "same_source": 26
+     },
+     "near_dup": {
+      "n": 10,
+      "gold_inside_ev": 10,
+      "ev_inside_gold": 0,
+      "jaccard_hits": 0,
+      "doc_type": {
+       "neg": 9,
+       "google_neg": 1
+      }
+     }
+    },
+    "base_rate": {
+     "definition": "all top-5 docs of qrels-none contexts, v2 classes (gold_elsewhere counted as other); evidence = judge evidence_docs in its false misses (label yes); evidence_rate = evidence docs of a class / all docs of that class; tied = any class except other",
+     "n_none_contexts": 300,
+     "n_docs": 1500,
+     "n_evidence_docs": 242,
+     "docs_by_class": {
+      "near_dup": 20,
+      "other_turn": 174,
+      "same_source": 121,
+      "pool_neg": 728,
+      "other": 457
+     },
+     "docs_by_class_group": {
+      "StackExchange": {
+       "near_dup": 18,
+       "other_turn": 66,
+       "same_source": 8,
+       "pool_neg": 445,
+       "other": 103
+      },
+      "BRIGHT": {
+       "near_dup": 2,
+       "other_turn": 108,
+       "same_source": 113,
+       "pool_neg": 283,
+       "other": 354
+      }
+     },
+     "evidence_by_class": {
+      "near_dup": 10,
+      "other_turn": 40,
+      "same_source": 26,
+      "pool_neg": 117,
+      "other": 49
+     },
+     "tied_share_of_docs": 0.6953,
+     "tied_share_of_evidence": 0.7975,
+     "evidence_rate": {
+      "near_dup": 0.5,
+      "other_turn": 0.2299,
+      "same_source": 0.2149,
+      "pool_neg": 0.1607,
+      "other": 0.1072
+     },
+     "evidence_rate_tied": 0.185,
+     "evidence_rate_untied": 0.1072,
+     "none_ctx_with_tied_doc": {
+      "share": 0.9,
+      "lo": 0.8658,
+      "hi": 0.9327,
+      "k": 270,
+      "n": 300
+     },
+     "none_ctx_with_tied_doc_by_group": {
+      "StackExchange": {
+       "k": 125,
+       "n": 128,
+       "share": 0.9766
+      },
+      "BRIGHT": {
+       "k": 145,
+       "n": 172,
+       "share": 0.843
+      }
+     },
+     "precision_raw": {
+      "share": 0.4444,
+      "lo": 0.3793,
+      "hi": 0.5061,
+      "k": 108,
+      "n": 243
+     },
+     "precision_untied_fm_only": {
+      "share": 0.864,
+      "lo": 0.806,
+      "hi": 0.9208,
+      "k": 108,
+      "n": 125
+     },
+     "n_no": 108,
+     "n_false_miss": 135,
+     "n_false_miss_untied": 17
+    }
+   },
+   "Qwen3-14B": {
+    "false_miss": 72,
+    "none": 300,
+    "none_labels": {
+     "partial": 67,
+     "yes": 72,
+     "no": 161
+    },
+    "false_miss_rate_among_none": {
+     "share": 0.24,
+     "lo": 0.195,
+     "hi": 0.2875,
+     "k": 72,
+     "n": 300
+    },
+    "false_miss_rate_among_none_yes_or_no": {
+     "share": 0.309,
+     "lo": 0.2489,
+     "hi": 0.3722,
+     "k": 72,
+     "n": 233
+    },
+    "no_evidence": 0,
+    "invalid_evidence_indices": 0,
+    "tied_to_dialogue": {
+     "share": 0.9306,
+     "lo": 0.8684,
+     "hi": 0.9851,
+     "k": 67,
+     "n": 72
+    },
+    "context_eq_top5": "858/858",
+    "doc_level": {
+     "n_docs": 149,
+     "classes": {
+      "other": 23,
+      "near_dup": 8,
+      "pool_neg": 81,
+      "same_source": 13,
+      "other_turn": 24
+     },
+     "near_dup": {
+      "n": 8,
+      "gold_inside_ev": 8,
+      "ev_inside_gold": 0,
+      "jaccard_hits": 1,
+      "doc_type": {
+       "neg": 6,
+       "google_neg": 1,
+       "bright": 1
+      }
+     }
+    },
+    "base_rate": {
+     "definition": "all top-5 docs of qrels-none contexts, v2 classes (gold_elsewhere counted as other); evidence = judge evidence_docs in its false misses (label yes); evidence_rate = evidence docs of a class / all docs of that class; tied = any class except other",
+     "n_none_contexts": 300,
+     "n_docs": 1500,
+     "n_evidence_docs": 149,
+     "docs_by_class": {
+      "near_dup": 20,
+      "other_turn": 174,
+      "same_source": 121,
+      "pool_neg": 728,
+      "other": 457
+     },
+     "docs_by_class_group": {
+      "StackExchange": {
+       "near_dup": 18,
+       "other_turn": 66,
+       "same_source": 8,
+       "pool_neg": 445,
+       "other": 103
+      },
+      "BRIGHT": {
+       "near_dup": 2,
+       "other_turn": 108,
+       "same_source": 113,
+       "pool_neg": 283,
+       "other": 354
+      }
+     },
+     "evidence_by_class": {
+      "near_dup": 8,
+      "other_turn": 24,
+      "same_source": 13,
+      "pool_neg": 81,
+      "other": 23
+     },
+     "tied_share_of_docs": 0.6953,
+     "tied_share_of_evidence": 0.8456,
+     "evidence_rate": {
+      "near_dup": 0.4,
+      "other_turn": 0.1379,
+      "same_source": 0.1074,
+      "pool_neg": 0.1113,
+      "other": 0.0503
+     },
+     "evidence_rate_tied": 0.1208,
+     "evidence_rate_untied": 0.0503,
+     "none_ctx_with_tied_doc": {
+      "share": 0.9,
+      "lo": 0.8658,
+      "hi": 0.9327,
+      "k": 270,
+      "n": 300
+     },
+     "none_ctx_with_tied_doc_by_group": {
+      "StackExchange": {
+       "k": 125,
+       "n": 128,
+       "share": 0.9766
+      },
+      "BRIGHT": {
+       "k": 145,
+       "n": 172,
+       "share": 0.843
+      }
+     },
+     "precision_raw": {
+      "share": 0.691,
+      "lo": 0.6278,
+      "hi": 0.7511,
+      "k": 161,
+      "n": 233
+     },
+     "precision_untied_fm_only": {
+      "share": 0.9699,
+      "lo": 0.9429,
+      "hi": 0.9939,
+      "k": 161,
+      "n": 166
+     },
+     "n_no": 161,
+     "n_false_miss": 72,
+     "n_false_miss_untied": 5
+    }
+   }
+  },
+  "Fusion": {
+   "run": "bm25_fuse3_dev",
+   "ndcg10_macro": 0.5496,
+   "phi-4": {
+    "false_miss": 133,
+    "none": 195,
+    "none_labels": {
+     "yes": 133,
+     "partial": 32,
+     "no": 30
+    },
+    "false_miss_rate_among_none": {
+     "share": 0.6821,
+     "lo": 0.6176,
+     "hi": 0.75,
+     "k": 133,
+     "n": 195
+    },
+    "false_miss_rate_among_none_yes_or_no": {
+     "share": 0.816,
+     "lo": 0.7545,
+     "hi": 0.8785,
+     "k": 133,
+     "n": 163
+    },
+    "no_evidence": 0,
+    "invalid_evidence_indices": 0,
+    "tied_to_dialogue": {
+     "share": 0.8647,
+     "lo": 0.8018,
+     "hi": 0.9197,
+     "k": 115,
+     "n": 133
+    },
+    "context_eq_top5": "858/858",
+    "doc_level": {
+     "n_docs": 304,
+     "classes": {
+      "pool_neg": 158,
+      "other": 64,
+      "near_dup": 22,
+      "other_turn": 32,
+      "same_source": 28
+     },
+     "near_dup": {
+      "n": 22,
+      "gold_inside_ev": 20,
+      "ev_inside_gold": 2,
+      "jaccard_hits": 0,
+      "doc_type": {
+       "google_neg": 1,
+       "neg": 19,
+       "bright": 2
+      }
+     }
+    },
+    "base_rate": {
+     "definition": "all top-5 docs of qrels-none contexts, v2 classes (gold_elsewhere counted as other); evidence = judge evidence_docs in its false misses (label yes); evidence_rate = evidence docs of a class / all docs of that class; tied = any class except other",
+     "n_none_contexts": 195,
+     "n_docs": 975,
+     "n_evidence_docs": 304,
+     "docs_by_class": {
+      "near_dup": 44,
+      "other_turn": 102,
+      "same_source": 99,
+      "pool_neg": 476,
+      "other": 254
+     },
+     "docs_by_class_group": {
+      "StackExchange": {
+       "near_dup": 39,
+       "other_turn": 29,
+       "same_source": 4,
+       "pool_neg": 369,
+       "other": 84
+      },
+      "BRIGHT": {
+       "near_dup": 5,
+       "other_turn": 73,
+       "same_source": 95,
+       "pool_neg": 107,
+       "other": 170
+      }
+     },
+     "evidence_by_class": {
+      "near_dup": 22,
+      "other_turn": 32,
+      "same_source": 28,
+      "pool_neg": 158,
+      "other": 64
+     },
+     "tied_share_of_docs": 0.7395,
+     "tied_share_of_evidence": 0.7895,
+     "evidence_rate": {
+      "near_dup": 0.5,
+      "other_turn": 0.3137,
+      "same_source": 0.2828,
+      "pool_neg": 0.3319,
+      "other": 0.252
+     },
+     "evidence_rate_tied": 0.3329,
+     "evidence_rate_untied": 0.252,
+     "none_ctx_with_tied_doc": {
+      "share": 0.9538,
+      "lo": 0.9247,
+      "hi": 0.9796,
+      "k": 186,
+      "n": 195
+     },
+     "none_ctx_with_tied_doc_by_group": {
+      "StackExchange": {
+       "k": 103,
+       "n": 105,
+       "share": 0.981
+      },
+      "BRIGHT": {
+       "k": 83,
+       "n": 90,
+       "share": 0.9222
+      }
+     },
+     "precision_raw": {
+      "share": 0.184,
+      "lo": 0.1215,
+      "hi": 0.2455,
+      "k": 30,
+      "n": 163
+     },
+     "precision_untied_fm_only": {
+      "share": 0.625,
+      "lo": 0.4722,
+      "hi": 0.7628,
+      "k": 30,
+      "n": 48
+     },
+     "n_no": 30,
+     "n_false_miss": 133,
+     "n_false_miss_untied": 18
+    }
+   },
+   "Qwen3-14B": {
+    "false_miss": 101,
+    "none": 195,
+    "none_labels": {
+     "yes": 101,
+     "partial": 52,
+     "no": 42
+    },
+    "false_miss_rate_among_none": {
+     "share": 0.5179,
+     "lo": 0.4444,
+     "hi": 0.5847,
+     "k": 101,
+     "n": 195
+    },
+    "false_miss_rate_among_none_yes_or_no": {
+     "share": 0.7063,
+     "lo": 0.6277,
+     "hi": 0.7762,
+     "k": 101,
+     "n": 143
+    },
+    "no_evidence": 0,
+    "invalid_evidence_indices": 0,
+    "tied_to_dialogue": {
+     "share": 0.8614,
+     "lo": 0.7838,
+     "hi": 0.9271,
+     "k": 87,
+     "n": 101
+    },
+    "context_eq_top5": "858/858",
+    "doc_level": {
+     "n_docs": 288,
+     "classes": {
+      "pool_neg": 140,
+      "other": 64,
+      "near_dup": 27,
+      "other_turn": 29,
+      "same_source": 28
+     },
+     "near_dup": {
+      "n": 27,
+      "gold_inside_ev": 27,
+      "ev_inside_gold": 0,
+      "jaccard_hits": 1,
+      "doc_type": {
+       "google_neg": 1,
+       "neg": 25,
+       "bright": 1
+      }
+     }
+    },
+    "base_rate": {
+     "definition": "all top-5 docs of qrels-none contexts, v2 classes (gold_elsewhere counted as other); evidence = judge evidence_docs in its false misses (label yes); evidence_rate = evidence docs of a class / all docs of that class; tied = any class except other",
+     "n_none_contexts": 195,
+     "n_docs": 975,
+     "n_evidence_docs": 288,
+     "docs_by_class": {
+      "near_dup": 44,
+      "other_turn": 102,
+      "same_source": 99,
+      "pool_neg": 476,
+      "other": 254
+     },
+     "docs_by_class_group": {
+      "StackExchange": {
+       "near_dup": 39,
+       "other_turn": 29,
+       "same_source": 4,
+       "pool_neg": 369,
+       "other": 84
+      },
+      "BRIGHT": {
+       "near_dup": 5,
+       "other_turn": 73,
+       "same_source": 95,
+       "pool_neg": 107,
+       "other": 170
+      }
+     },
+     "evidence_by_class": {
+      "near_dup": 27,
+      "other_turn": 29,
+      "same_source": 28,
+      "pool_neg": 140,
+      "other": 64
+     },
+     "tied_share_of_docs": 0.7395,
+     "tied_share_of_evidence": 0.7778,
+     "evidence_rate": {
+      "near_dup": 0.6136,
+      "other_turn": 0.2843,
+      "same_source": 0.2828,
+      "pool_neg": 0.2941,
+      "other": 0.252
+     },
+     "evidence_rate_tied": 0.3107,
+     "evidence_rate_untied": 0.252,
+     "none_ctx_with_tied_doc": {
+      "share": 0.9538,
+      "lo": 0.9247,
+      "hi": 0.9796,
+      "k": 186,
+      "n": 195
+     },
+     "none_ctx_with_tied_doc_by_group": {
+      "StackExchange": {
+       "k": 103,
+       "n": 105,
+       "share": 0.981
+      },
+      "BRIGHT": {
+       "k": 83,
+       "n": 90,
+       "share": 0.9222
+      }
+     },
+     "precision_raw": {
+      "share": 0.2937,
+      "lo": 0.2238,
+      "hi": 0.3723,
+      "k": 42,
+      "n": 143
+     },
+     "precision_untied_fm_only": {
+      "share": 0.75,
+      "lo": 0.6326,
+      "hi": 0.8621,
+      "k": 42,
+      "n": 56
+     },
+     "n_no": 42,
+     "n_false_miss": 101,
+     "n_false_miss_untied": 14
+    }
+   }
+  },
+  "Hybrid": {
+   "run": "hyb_dense_hanhainebula_reason-embed-qwen3-4b-0928_q2d_dev",
+   "ndcg10_macro": 0.5913,
+   "phi-4": {
+    "false_miss": 113,
+    "none": 158,
+    "none_labels": {
+     "yes": 113,
+     "partial": 32,
+     "no": 13
+    },
+    "false_miss_rate_among_none": {
+     "share": 0.7152,
+     "lo": 0.6402,
+     "hi": 0.7808,
+     "k": 113,
+     "n": 158
+    },
+    "false_miss_rate_among_none_yes_or_no": {
+     "share": 0.8968,
+     "lo": 0.8407,
+     "hi": 0.9462,
+     "k": 113,
+     "n": 126
+    },
+    "no_evidence": 0,
+    "invalid_evidence_indices": 0,
+    "tied_to_dialogue": {
+     "share": 0.8584,
+     "lo": 0.7931,
+     "hi": 0.9204,
+     "k": 97,
+     "n": 113
+    },
+    "context_eq_top5": "858/858",
+    "doc_level": {
+     "n_docs": 313,
+     "classes": {
+      "other": 62,
+      "pool_neg": 172,
+      "other_turn": 27,
+      "same_source": 39,
+      "near_dup": 13
+     },
+     "near_dup": {
+      "n": 13,
+      "gold_inside_ev": 11,
+      "ev_inside_gold": 2,
+      "jaccard_hits": 0,
+      "doc_type": {
+       "neg": 11,
+       "bright": 2
+      }
+     }
+    },
+    "base_rate": {
+     "definition": "all top-5 docs of qrels-none contexts, v2 classes (gold_elsewhere counted as other); evidence = judge evidence_docs in its false misses (label yes); evidence_rate = evidence docs of a class / all docs of that class; tied = any class except other",
+     "n_none_contexts": 158,
+     "n_docs": 790,
+     "n_evidence_docs": 313,
+     "docs_by_class": {
+      "near_dup": 26,
+      "other_turn": 82,
+      "same_source": 84,
+      "pool_neg": 373,
+      "other": 225
+     },
+     "docs_by_class_group": {
+      "StackExchange": {
+       "near_dup": 19,
+       "other_turn": 18,
+       "same_source": 2,
+       "pool_neg": 298,
+       "other": 68
+      },
+      "BRIGHT": {
+       "near_dup": 7,
+       "other_turn": 64,
+       "same_source": 82,
+       "pool_neg": 75,
+       "other": 157
+      }
+     },
+     "evidence_by_class": {
+      "near_dup": 13,
+      "other_turn": 27,
+      "same_source": 39,
+      "pool_neg": 172,
+      "other": 62
+     },
+     "tied_share_of_docs": 0.7152,
+     "tied_share_of_evidence": 0.8019,
+     "evidence_rate": {
+      "near_dup": 0.5,
+      "other_turn": 0.3293,
+      "same_source": 0.4643,
+      "pool_neg": 0.4611,
+      "other": 0.2756
+     },
+     "evidence_rate_tied": 0.4442,
+     "evidence_rate_untied": 0.2756,
+     "none_ctx_with_tied_doc": {
+      "share": 0.8987,
+      "lo": 0.8494,
+      "hi": 0.9419,
+      "k": 142,
+      "n": 158
+     },
+     "none_ctx_with_tied_doc_by_group": {
+      "StackExchange": {
+       "k": 74,
+       "n": 81,
+       "share": 0.9136
+      },
+      "BRIGHT": {
+       "k": 68,
+       "n": 77,
+       "share": 0.8831
+      }
+     },
+     "precision_raw": {
+      "share": 0.1032,
+      "lo": 0.0538,
+      "hi": 0.1593,
+      "k": 13,
+      "n": 126
+     },
+     "precision_untied_fm_only": {
+      "share": 0.4483,
+      "lo": 0.2581,
+      "hi": 0.6364,
+      "k": 13,
+      "n": 29
+     },
+     "n_no": 13,
+     "n_false_miss": 113,
+     "n_false_miss_untied": 16
+    }
+   },
+   "Qwen3-14B": {
+    "false_miss": 92,
+    "none": 158,
+    "none_labels": {
+     "yes": 92,
+     "partial": 42,
+     "no": 24
+    },
+    "false_miss_rate_among_none": {
+     "share": 0.5823,
+     "lo": 0.508,
+     "hi": 0.6561,
+     "k": 92,
+     "n": 158
+    },
+    "false_miss_rate_among_none_yes_or_no": {
+     "share": 0.7931,
+     "lo": 0.7168,
+     "hi": 0.8655,
+     "k": 92,
+     "n": 116
+    },
+    "no_evidence": 0,
+    "invalid_evidence_indices": 0,
+    "tied_to_dialogue": {
+     "share": 0.8696,
+     "lo": 0.7999,
+     "hi": 0.9326,
+     "k": 80,
+     "n": 92
+    },
+    "context_eq_top5": "858/858",
+    "doc_level": {
+     "n_docs": 296,
+     "classes": {
+      "other": 73,
+      "pool_neg": 151,
+      "near_dup": 10,
+      "other_turn": 24,
+      "same_source": 38
+     },
+     "near_dup": {
+      "n": 10,
+      "gold_inside_ev": 10,
+      "ev_inside_gold": 0,
+      "jaccard_hits": 0,
+      "doc_type": {
+       "neg": 10
+      }
+     }
+    },
+    "base_rate": {
+     "definition": "all top-5 docs of qrels-none contexts, v2 classes (gold_elsewhere counted as other); evidence = judge evidence_docs in its false misses (label yes); evidence_rate = evidence docs of a class / all docs of that class; tied = any class except other",
+     "n_none_contexts": 158,
+     "n_docs": 790,
+     "n_evidence_docs": 296,
+     "docs_by_class": {
+      "near_dup": 26,
+      "other_turn": 82,
+      "same_source": 84,
+      "pool_neg": 373,
+      "other": 225
+     },
+     "docs_by_class_group": {
+      "StackExchange": {
+       "near_dup": 19,
+       "other_turn": 18,
+       "same_source": 2,
+       "pool_neg": 298,
+       "other": 68
+      },
+      "BRIGHT": {
+       "near_dup": 7,
+       "other_turn": 64,
+       "same_source": 82,
+       "pool_neg": 75,
+       "other": 157
+      }
+     },
+     "evidence_by_class": {
+      "near_dup": 10,
+      "other_turn": 24,
+      "same_source": 38,
+      "pool_neg": 151,
+      "other": 73
+     },
+     "tied_share_of_docs": 0.7152,
+     "tied_share_of_evidence": 0.7534,
+     "evidence_rate": {
+      "near_dup": 0.3846,
+      "other_turn": 0.2927,
+      "same_source": 0.4524,
+      "pool_neg": 0.4048,
+      "other": 0.3244
+     },
+     "evidence_rate_tied": 0.3947,
+     "evidence_rate_untied": 0.3244,
+     "none_ctx_with_tied_doc": {
+      "share": 0.8987,
+      "lo": 0.8494,
+      "hi": 0.9419,
+      "k": 142,
+      "n": 158
+     },
+     "none_ctx_with_tied_doc_by_group": {
+      "StackExchange": {
+       "k": 74,
+       "n": 81,
+       "share": 0.9136
+      },
+      "BRIGHT": {
+       "k": 68,
+       "n": 77,
+       "share": 0.8831
+      }
+     },
+     "precision_raw": {
+      "share": 0.2069,
+      "lo": 0.1345,
+      "hi": 0.2832,
+      "k": 24,
+      "n": 116
+     },
+     "precision_untied_fm_only": {
+      "share": 0.6667,
+      "lo": 0.5,
+      "hi": 0.8236,
+      "k": 24,
+      "n": 36
+     },
+     "n_no": 24,
+     "n_false_miss": 92,
+     "n_false_miss_untied": 12
+    }
+   }
+  }
+ },
+ "claude": {
+  "audit1_top5_order_matches_context_ids": "100/100",
+  "BM25-turn": {
+   "items": 50,
+   "Claude": {
+    "yes": 13,
+    "tied_to_dialogue": {
+     "share": 1.0,
+     "lo": 1.0,
+     "hi": 1.0,
+     "k": 13,
+     "n": 13
+    }
+   },
+   "phi-4 (same items)": {
+    "yes": 16,
+    "tied_to_dialogue": {
+     "share": 0.875,
+     "lo": 0.6922,
+     "hi": 1.0,
+     "k": 14,
+     "n": 16
+    }
+   },
+   "Qwen3-14B (same items)": {
+    "yes": 7,
+    "tied_to_dialogue": {
+     "share": 1.0,
+     "lo": 1.0,
+     "hi": 1.0,
+     "k": 7,
+     "n": 7
+    }
+   }
+  },
+  "BM25-hist": {
+   "items": 50,
+   "Claude": {
+    "yes": 16,
+    "tied_to_dialogue": {
+     "share": 0.9375,
+     "lo": 0.8,
+     "hi": 1.0,
+     "k": 15,
+     "n": 16
+    }
+   },
+   "phi-4 (same items)": {
+    "yes": 25,
+    "tied_to_dialogue": {
+     "share": 0.8,
+     "lo": 0.6364,
+     "hi": 0.9524,
+     "k": 20,
+     "n": 25
+    }
+   },
+   "Qwen3-14B (same items)": {
+    "yes": 13,
+    "tied_to_dialogue": {
+     "share": 0.9231,
+     "lo": 0.7688,
+     "hi": 1.0,
+     "k": 12,
+     "n": 13
+    }
+   }
+  },
+  "Fusion": {
+   "items": 50,
+   "Claude": {
+    "yes": 30,
+    "tied_to_dialogue": {
+     "share": 0.9,
+     "lo": 0.7812,
+     "hi": 1.0,
+     "k": 27,
+     "n": 30
+    }
+   },
+   "phi-4 (same items)": {
+    "yes": 31,
+    "tied_to_dialogue": {
+     "share": 0.9032,
+     "lo": 0.7879,
+     "hi": 1.0,
+     "k": 28,
+     "n": 31
+    }
+   },
+   "Qwen3-14B (same items)": {
+    "yes": 25,
+    "tied_to_dialogue": {
+     "share": 0.88,
+     "lo": 0.72,
+     "hi": 1.0,
+     "k": 22,
+     "n": 25
+    }
+   }
+  },
+  "Hybrid": {
+   "items": 50,
+   "Claude": {
+    "yes": 30,
+    "tied_to_dialogue": {
+     "share": 1.0,
+     "lo": 1.0,
+     "hi": 1.0,
+     "k": 30,
+     "n": 30
+    }
+   },
+   "phi-4 (same items)": {
+    "yes": 32,
+    "tied_to_dialogue": {
+     "share": 1.0,
+     "lo": 1.0,
+     "hi": 1.0,
+     "k": 32,
+     "n": 32
+    }
+   },
+   "Qwen3-14B (same items)": {
+    "yes": 32,
+    "tied_to_dialogue": {
+     "share": 0.9688,
+     "lo": 0.8947,
+     "hi": 1.0,
+     "k": 31,
+     "n": 32
+    }
+   }
+  }
+ },
+ "example_candidates": 48
+}

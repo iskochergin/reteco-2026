@@ -1,0 +1,61 @@
+row,annotator,class,share,lo,hi,k,n
+BM25-turn,Claude,near_dup,0.0,0.0,0.0,0,13
+BM25-turn,Claude,other_turn,0.0769,0.0,0.2504,1,13
+BM25-turn,Claude,same_source,0.3077,0.0769,0.6,4,13
+BM25-turn,Claude,pool_neg,0.6154,0.3333,0.8669,8,13
+BM25-turn,Claude,other,0.0,0.0,0.0,0,13
+BM25-turn,phi-4 (same items),near_dup,0.0,0.0,0.0,0,16
+BM25-turn,phi-4 (same items),other_turn,0.125,0.0,0.3333,2,16
+BM25-turn,phi-4 (same items),same_source,0.1875,0.0,0.4003,3,16
+BM25-turn,phi-4 (same items),pool_neg,0.5625,0.2941,0.7897,9,16
+BM25-turn,phi-4 (same items),other,0.125,0.0,0.3078,2,16
+BM25-turn,Qwen3-14B (same items),near_dup,0.0,0.0,0.0,0,7
+BM25-turn,Qwen3-14B (same items),other_turn,0.0,0.0,0.0,0,7
+BM25-turn,Qwen3-14B (same items),same_source,0.2857,0.0,0.7143,2,7
+BM25-turn,Qwen3-14B (same items),pool_neg,0.7143,0.2857,1.0,5,7
+BM25-turn,Qwen3-14B (same items),other,0.0,0.0,0.0,0,7
+BM25-hist,Claude,near_dup,0.125,0.0,0.3333,2,16
+BM25-hist,Claude,other_turn,0.375,0.1333,0.6364,6,16
+BM25-hist,Claude,same_source,0.1875,0.0,0.4,3,16
+BM25-hist,Claude,pool_neg,0.25,0.0556,0.4617,4,16
+BM25-hist,Claude,other,0.0625,0.0,0.2,1,16
+BM25-hist,phi-4 (same items),near_dup,0.08,0.0,0.2069,2,25
+BM25-hist,phi-4 (same items),other_turn,0.32,0.1429,0.5186,8,25
+BM25-hist,phi-4 (same items),same_source,0.16,0.0357,0.3333,4,25
+BM25-hist,phi-4 (same items),pool_neg,0.24,0.0769,0.4286,6,25
+BM25-hist,phi-4 (same items),other,0.2,0.0476,0.3636,5,25
+BM25-hist,Qwen3-14B (same items),near_dup,0.0,0.0,0.0,0,13
+BM25-hist,Qwen3-14B (same items),other_turn,0.6154,0.3635,0.8892,8,13
+BM25-hist,Qwen3-14B (same items),same_source,0.1538,0.0,0.375,2,13
+BM25-hist,Qwen3-14B (same items),pool_neg,0.1538,0.0,0.3571,2,13
+BM25-hist,Qwen3-14B (same items),other,0.0769,0.0,0.2312,1,13
+Fusion,Claude,near_dup,0.2667,0.125,0.4376,8,30
+Fusion,Claude,other_turn,0.1333,0.0303,0.2594,4,30
+Fusion,Claude,same_source,0.1333,0.0312,0.2759,4,30
+Fusion,Claude,pool_neg,0.3667,0.1935,0.5484,11,30
+Fusion,Claude,other,0.1,0.0,0.2188,3,30
+Fusion,phi-4 (same items),near_dup,0.129,0.0294,0.2594,4,31
+Fusion,phi-4 (same items),other_turn,0.2581,0.1034,0.4194,8,31
+Fusion,phi-4 (same items),same_source,0.1613,0.037,0.2963,5,31
+Fusion,phi-4 (same items),pool_neg,0.3548,0.1935,0.5313,11,31
+Fusion,phi-4 (same items),other,0.0968,0.0,0.2121,3,31
+Fusion,Qwen3-14B (same items),near_dup,0.32,0.147,0.5185,8,25
+Fusion,Qwen3-14B (same items),other_turn,0.2,0.0555,0.3793,5,25
+Fusion,Qwen3-14B (same items),same_source,0.04,0.0,0.1305,1,25
+Fusion,Qwen3-14B (same items),pool_neg,0.32,0.15,0.5185,8,25
+Fusion,Qwen3-14B (same items),other,0.12,0.0,0.28,3,25
+Hybrid,Claude,near_dup,0.0667,0.0,0.1667,2,30
+Hybrid,Claude,other_turn,0.3,0.1429,0.4643,9,30
+Hybrid,Claude,same_source,0.1,0.0,0.2188,3,30
+Hybrid,Claude,pool_neg,0.5333,0.3665,0.7039,16,30
+Hybrid,Claude,other,0.0,0.0,0.0,0,30
+Hybrid,phi-4 (same items),near_dup,0.0938,0.0,0.2122,3,32
+Hybrid,phi-4 (same items),other_turn,0.25,0.1176,0.4001,8,32
+Hybrid,phi-4 (same items),same_source,0.0625,0.0,0.1563,2,32
+Hybrid,phi-4 (same items),pool_neg,0.5938,0.4062,0.7502,19,32
+Hybrid,phi-4 (same items),other,0.0,0.0,0.0,0,32
+Hybrid,Qwen3-14B (same items),near_dup,0.125,0.0312,0.2571,4,32
+Hybrid,Qwen3-14B (same items),other_turn,0.25,0.1176,0.4002,8,32
+Hybrid,Qwen3-14B (same items),same_source,0.0938,0.0,0.2059,3,32
+Hybrid,Qwen3-14B (same items),pool_neg,0.5,0.3225,0.6562,16,32
+Hybrid,Qwen3-14B (same items),other,0.0312,0.0,0.1053,1,32

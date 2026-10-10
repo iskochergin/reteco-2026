@@ -1,0 +1,81 @@
+judge,row,class,share,lo,hi,k,n
+phi-4,BM25-turn,near_dup,0.0578,0.0239,0.096,10,173
+phi-4,BM25-turn,other_turn,0.0867,0.0451,0.1334,15,173
+phi-4,BM25-turn,same_source,0.1734,0.117,0.232,30,173
+phi-4,BM25-turn,pool_neg,0.4104,0.331,0.4868,71,173
+phi-4,BM25-turn,other,0.2717,0.2063,0.3416,47,173
+phi-4,BM25-hist,near_dup,0.0741,0.0317,0.1212,10,135
+phi-4,BM25-hist,other_turn,0.2519,0.1838,0.3283,34,135
+phi-4,BM25-hist,same_source,0.1333,0.0826,0.1949,18,135
+phi-4,BM25-hist,pool_neg,0.4148,0.3358,0.5066,56,135
+phi-4,BM25-hist,other,0.1259,0.0732,0.1806,17,135
+phi-4,Fusion,near_dup,0.1353,0.0784,0.1985,18,133
+phi-4,Fusion,other_turn,0.188,0.1221,0.2552,25,133
+phi-4,Fusion,same_source,0.1278,0.0741,0.1921,17,133
+phi-4,Fusion,pool_neg,0.4135,0.3245,0.5,55,133
+phi-4,Fusion,other,0.1353,0.0803,0.1982,18,133
+phi-4,Hybrid,near_dup,0.0885,0.0385,0.1474,10,113
+phi-4,Hybrid,other_turn,0.1681,0.1038,0.2407,19,113
+phi-4,Hybrid,same_source,0.1327,0.0732,0.1961,15,113
+phi-4,Hybrid,pool_neg,0.469,0.375,0.5615,53,113
+phi-4,Hybrid,other,0.1416,0.0796,0.2069,16,113
+phi-4,Fusion: StackExchange,near_dup,0.2105,0.1176,0.3067,16,76
+phi-4,Fusion: StackExchange,other_turn,0.0789,0.0256,0.1447,6,76
+phi-4,Fusion: StackExchange,same_source,0.0132,0.0,0.0455,1,76
+phi-4,Fusion: StackExchange,pool_neg,0.6316,0.5072,0.7344,48,76
+phi-4,Fusion: StackExchange,other,0.0658,0.0141,0.1268,5,76
+phi-4,Fusion: BRIGHT,near_dup,0.0351,0.0,0.0976,2,57
+phi-4,Fusion: BRIGHT,other_turn,0.3333,0.2131,0.451,19,57
+phi-4,Fusion: BRIGHT,same_source,0.2807,0.1667,0.4074,16,57
+phi-4,Fusion: BRIGHT,pool_neg,0.1228,0.0425,0.2188,7,57
+phi-4,Fusion: BRIGHT,other,0.2281,0.1228,0.339,13,57
+phi-4,Hybrid: StackExchange,near_dup,0.1324,0.0536,0.2206,9,68
+phi-4,Hybrid: StackExchange,other_turn,0.0735,0.0185,0.1393,5,68
+phi-4,Hybrid: StackExchange,same_source,0.0,0.0,0.0,0,68
+phi-4,Hybrid: StackExchange,pool_neg,0.6912,0.5833,0.8,47,68
+phi-4,Hybrid: StackExchange,other,0.1029,0.0339,0.1804,7,68
+phi-4,Hybrid: BRIGHT,near_dup,0.0222,0.0,0.0715,1,45
+phi-4,Hybrid: BRIGHT,other_turn,0.3111,0.1851,0.45,14,45
+phi-4,Hybrid: BRIGHT,same_source,0.3333,0.2,0.4634,15,45
+phi-4,Hybrid: BRIGHT,pool_neg,0.1333,0.0465,0.2392,6,45
+phi-4,Hybrid: BRIGHT,other,0.2,0.0909,0.3265,9,45
+Qwen3-14B,BM25-turn,near_dup,0.1084,0.0444,0.1765,9,83
+Qwen3-14B,BM25-turn,other_turn,0.1084,0.0465,0.1819,9,83
+Qwen3-14B,BM25-turn,same_source,0.1807,0.101,0.2632,15,83
+Qwen3-14B,BM25-turn,pool_neg,0.3494,0.2477,0.4475,29,83
+Qwen3-14B,BM25-turn,other,0.253,0.1652,0.3479,21,83
+Qwen3-14B,BM25-hist,near_dup,0.1111,0.0441,0.1842,8,72
+Qwen3-14B,BM25-hist,other_turn,0.2639,0.1688,0.3704,19,72
+Qwen3-14B,BM25-hist,same_source,0.1528,0.0735,0.2405,11,72
+Qwen3-14B,BM25-hist,pool_neg,0.4028,0.2907,0.5152,29,72
+Qwen3-14B,BM25-hist,other,0.0694,0.0149,0.1316,5,72
+Qwen3-14B,Fusion,near_dup,0.2079,0.1346,0.2887,21,101
+Qwen3-14B,Fusion,other_turn,0.1881,0.1122,0.268,19,101
+Qwen3-14B,Fusion,same_source,0.1188,0.0594,0.1881,12,101
+Qwen3-14B,Fusion,pool_neg,0.3465,0.2551,0.448,35,101
+Qwen3-14B,Fusion,other,0.1386,0.0729,0.2162,14,101
+Qwen3-14B,Hybrid,near_dup,0.0978,0.0417,0.1667,9,92
+Qwen3-14B,Hybrid,other_turn,0.1522,0.0833,0.2316,14,92
+Qwen3-14B,Hybrid,same_source,0.1739,0.1053,0.2558,16,92
+Qwen3-14B,Hybrid,pool_neg,0.4457,0.3505,0.5544,41,92
+Qwen3-14B,Hybrid,other,0.1304,0.0674,0.2001,12,92
+Qwen3-14B,Fusion: StackExchange,near_dup,0.3125,0.203,0.4311,20,64
+Qwen3-14B,Fusion: StackExchange,other_turn,0.1094,0.037,0.1875,7,64
+Qwen3-14B,Fusion: StackExchange,same_source,0.0,0.0,0.0,0,64
+Qwen3-14B,Fusion: StackExchange,pool_neg,0.4844,0.3636,0.6035,31,64
+Qwen3-14B,Fusion: StackExchange,other,0.0938,0.0308,0.1698,6,64
+Qwen3-14B,Fusion: BRIGHT,near_dup,0.027,0.0,0.0883,1,37
+Qwen3-14B,Fusion: BRIGHT,other_turn,0.3243,0.1739,0.4707,12,37
+Qwen3-14B,Fusion: BRIGHT,same_source,0.3243,0.175,0.4849,12,37
+Qwen3-14B,Fusion: BRIGHT,pool_neg,0.1081,0.0263,0.2084,4,37
+Qwen3-14B,Fusion: BRIGHT,other,0.2162,0.0889,0.3549,8,37
+Qwen3-14B,Hybrid: StackExchange,near_dup,0.1698,0.0768,0.283,9,53
+Qwen3-14B,Hybrid: StackExchange,other_turn,0.0755,0.0175,0.1455,4,53
+Qwen3-14B,Hybrid: StackExchange,same_source,0.0,0.0,0.0,0,53
+Qwen3-14B,Hybrid: StackExchange,pool_neg,0.6604,0.5227,0.7917,35,53
+Qwen3-14B,Hybrid: StackExchange,other,0.0943,0.0208,0.1765,5,53
+Qwen3-14B,Hybrid: BRIGHT,near_dup,0.0,0.0,0.0,0,39
+Qwen3-14B,Hybrid: BRIGHT,other_turn,0.2564,0.1212,0.4,10,39
+Qwen3-14B,Hybrid: BRIGHT,same_source,0.4103,0.2592,0.5581,16,39
+Qwen3-14B,Hybrid: BRIGHT,pool_neg,0.1538,0.0454,0.2821,6,39
+Qwen3-14B,Hybrid: BRIGHT,other,0.1795,0.0697,0.3031,7,39
