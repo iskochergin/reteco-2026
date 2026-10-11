@@ -161,14 +161,14 @@ Two checks bound parts of this effect. In a negative control, each turn is paire
 \label{sec:anatomy}
 %=====================================================================
 
+For each false miss we take the evidence documents named by the judge and classify the best one by its relation to the turn's gold (Figure~\ref{fig:anatomy}). It can be a \emph{near-duplicate} of a gold document (word 8-gram containment $\geq .8$ or character 5-gram Jaccard $\geq .7$), the gold document of \emph{another turn} of the same dialogue, a chunk of the \emph{same source} page, a labelled negative from the dialogue's own candidate pool (\emph{same-thread negative}), or any \emph{other document}. The first four classes are tied to the dialogue. Document IDs are used here only for analysis; no model sees them.
+
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{fig_anatomy}
 \caption{Where the answer comes from in false misses (qrels \qnone, phi-4 \cyes), by the best evidence document named by the judge. ``Same-thread negative'': a document mined as a hard negative for the same question.}
 \label{fig:anatomy}
 \end{figure}
-
-For each false miss we take the evidence documents named by the judge and classify the best one by its relation to the turn's gold (Figure~\ref{fig:anatomy}). It can be a \emph{near-duplicate} of a gold document (word 8-gram containment $\geq .8$ or character 5-gram Jaccard $\geq .7$), the gold document of \emph{another turn} of the same dialogue, a chunk of the \emph{same source} page, a labelled negative from the dialogue's own candidate pool (\emph{same-thread negative}), or any \emph{other document}. The first four classes are tied to the dialogue. Document IDs are used here only for analysis; no model sees them.
 
 On both strong retrievers, 86\% of false misses are tied to the dialogue (BM25-fusion \ci{80}{92}, hybrid \ci{79}{92}). On BM25-fusion, 14\% are near-duplicates, 19\% gold of another turn, 13\% chunks of the same source and 41\% same-thread negatives. The two domain groups differ in mechanism. In the StackExchange domains, the released corpus contains for every dialogue its own pool of negative documents collected for that question, about 20--46 of one type and 280--420 web-search results per dialogue \citep{ali2026recor}. They carry the answer in 63\% of false misses on BM25-fusion and 69\% on the hybrid, and nearly all near-duplicates are such negatives that still contain a gold passage verbatim after this filtering. In the BRIGHT domains the evidence is more often another turn's gold (31--33\%) or a neighbouring chunk of the gold page (28--33\%). History-based queries retrieve earlier turns' gold more often, plausibly because the official history contains earlier turns' questions and reference answers: this class grows from 9\% of false misses on BM25-turn to 25\% on BM25-hist. The blind audit's own false misses fall into the same classes: 90\% (BM25-fusion) and 100\% (hybrid) of them are tied to the dialogue.
 
