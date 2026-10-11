@@ -474,7 +474,7 @@ def tab_agreement():
     t.row("Items", "$n$", "agree", r"$\kappa$", "AC1")
     t.raw(r"\midrule")
     cp = get_pair("claude", "phi-4")
-    t.row(("mc", 5, "@{}l", r"\textit{Blind audit (Claude) vs.\ phi-4}"))
+    t.row(("mc", 5, "@{}l", r"\textit{Blind audit (Claude Opus 5.5) vs.\ phi-4}"))
     t.row("all audited", *stats(cp("all_audited"), kci=True))
     t.row(r"\quad \qnone{} only", *stats(cp("none_audited")))
     for s, name in (("bm25_query", "BM25-turn"), ("bm25_hist", "BM25-hist"), ("bm25_fuse3", "Fusion"),
@@ -485,7 +485,7 @@ def tab_agreement():
     t.row(r"\cyes{} vs.\ \cno{} only", r["n_strict"], n2(fl(r["agree_yes_no"])), n2(fl(r["kappa_yes_no"])),
           n2(fl(r["ac1_yes_no"])))
     t.raw(r"\addlinespace[2pt]")
-    t.row(("mc", 5, "@{}l", r"\textit{Claude run A vs.\ run B (before adjudication)}"))
+    t.row(("mc", 5, "@{}l", r"\textit{Audit run A vs.\ run B (before adjudication)}"))
     t.row("all audited", *stats(get.get(("claude_A vs claude_B", "all_audited"))))
     t.raw(r"\addlinespace[2pt]")
     qp = get_pair("phi-4", "Qwen3-14B")
@@ -499,7 +499,7 @@ def tab_agreement():
         cq = get_pair("claude", "Qwen3-14B")
         if cq("all_audited"):
             t.raw(r"\addlinespace[2pt]")
-            t.row(("mc", 5, "@{}l", r"\textit{Blind audit (Claude) vs.\ Qwen3-14B}"))
+            t.row(("mc", 5, "@{}l", r"\textit{Blind audit (Claude Opus 5.5) vs.\ Qwen3-14B}"))
             t.row("all audited", *stats(cq("all_audited"), kci=True))
     else:
         t.row(r"gold + 4 retrievers", PEND, PEND, PEND, PEND)
@@ -510,10 +510,10 @@ def tab_agreement():
         if j in L3 and c in L3:
             cm[c, j] += 1
     t.raw(r"\midrule")
-    t.row(("mc", 5, "@{}l", r"\textit{Claude (rows) $\times$ phi-4 (columns), all audited}"))
+    t.row(("mc", 5, "@{}l", r"\textit{Audit (rows) $\times$ phi-4 (columns), all audited}"))
     t.row("", "", r"\cyes", r"\cpart", r"\cno")
     for c in L3:
-        t.row(rf"\quad Claude {CMAC[c]}", "", *[str(cm[c, j]) for j in L3])
+        t.row(rf"\quad audit {CMAC[c]}", "", *[str(cm[c, j]) for j in L3])
     t.raw(r"\bottomrule")
     tot = sum(cm.values())
     diag = sum(cm[c, c] for c in L3)

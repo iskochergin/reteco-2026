@@ -7,7 +7,7 @@
 \toprule
 Items & $n$ & agree & $\kappa$ & AC1 \\
 \midrule
-\multicolumn{5}{@{}l}{\textit{Blind audit (Claude) vs.\ phi-4}} \\
+\multicolumn{5}{@{}l}{\textit{Blind audit (Claude Opus 5.5) vs.\ phi-4}} \\
 all audited & 250 & .64 & .38\ci{.28}{.47} & .49 \\
 \quad \qnone{} only & 200 & .59 & .35 & .40 \\
 \quad BM25-turn & 50 & .68 & .45 & .55 \\
@@ -16,7 +16,7 @@ all audited & 250 & .64 & .38\ci{.28}{.47} & .49 \\
 \quad Hybrid & 50 & .60 & .25 & .45 \\
 \cyes{} vs.\ \cno{} only & 181 & .82 & .59 & .67 \\
 \addlinespace[2pt]
-\multicolumn{5}{@{}l}{\textit{Claude run A vs.\ run B (before adjudication)}} \\
+\multicolumn{5}{@{}l}{\textit{Audit run A vs.\ run B (before adjudication)}} \\
 all audited & 250 & .97 & .95 & .96 \\
 \addlinespace[2pt]
 \multicolumn{5}{@{}l}{\textit{Qwen3-14B vs.\ phi-4 (all contexts)}} \\
@@ -27,14 +27,14 @@ gold + 4 retrievers & 4{,}290 & .70 & .44\ci{.42}{.46} & .59 \\
 \quad Fusion & 858 & .69 & .28 & .60 \\
 \quad Hybrid & 858 & .73 & .30 & .66 \\
 \addlinespace[2pt]
-\multicolumn{5}{@{}l}{\textit{Blind audit (Claude) vs.\ Qwen3-14B}} \\
+\multicolumn{5}{@{}l}{\textit{Blind audit (Claude Opus 5.5) vs.\ Qwen3-14B}} \\
 all audited & 250 & .68 & .49\ci{.40}{.58} & .54 \\
 \midrule
-\multicolumn{5}{@{}l}{\textit{Claude (rows) $\times$ phi-4 (columns), all audited}} \\
+\multicolumn{5}{@{}l}{\textit{Audit (rows) $\times$ phi-4 (columns), all audited}} \\
  &  & \cyes & \cpart & \cno \\
-\quad Claude \cyes &  & 104 & 19 & 14 \\
-\quad Claude \cpart &  & 24 & 12 & 4 \\
-\quad Claude \cno &  & 19 & 10 & 44 \\
+\quad audit \cyes &  & 104 & 19 & 14 \\
+\quad audit \cpart &  & 24 & 12 & 4 \\
+\quad audit \cno &  & 19 & 10 & 44 \\
 \bottomrule
 \end{tabularx}
 \caption{Agreement between labellers on the three-way sufficiency label: raw agreement, Cohen's $\kappa$ (95\% bootstrap CI over items where shown) and Gwet's AC1. The audit covers 250 contexts: 50 random \qnone{} contexts per retriever and, for Fusion\textsuperscript{a}, 50 \qnone{} plus 50 \textsc{all}. \cyes{} vs.\ \cno: items where neither labeller says \cpart. Run A read each item holistically, run B checked the reference answer claim by claim.}

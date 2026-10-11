@@ -36,7 +36,7 @@ STYLE = {
     "qrels": ("qrels: no gold in top-5", "#D55E00", "s", "--"),
     "phi-4": ("content: phi-4", "#0072B2", "o", "-"),
     "Qwen3-14B": ("content: Qwen3-14B", "#009E73", "^", "-"),
-    "audit": ("blind audit (Claude)", "#000000", "D", ":"),
+    "audit": ("blind audit (Claude Opus 5.5)", "#000000", "D", ":"),
 }
 JUDGES = ["phi-4", "Qwen3-14B"]
 STAGE = {"bm25_query": "BM25-turn", "bm25_hist": "BM25-hist", "bm25_fuse3": "Fusion", "hybrid": "Hybrid",
@@ -183,7 +183,7 @@ def fig_bias():
     b.set_yticks([0, 0.2, 0.4, 0.6, 0.8, 1.0], ["0", ".2", ".4", ".6", ".8", "1"])
     b.set_title("(b) Precision of “no gold” as a detector of insufficiency", loc="left", pad=11)
     a.legend(handles=[handle("qrels")] + [handle(j) for j in judges], loc="lower left")
-    b.legend(handles=[handle(j) for j in judges] + [handle("audit", "blind audit (Claude), 50 per stage")],
+    b.legend(handles=[handle(j) for j in judges] + [handle("audit", "blind audit (Claude Opus 5.5), 50 per stage")],
              loc="lower left")
     save(fig, "fig_bias")
 
