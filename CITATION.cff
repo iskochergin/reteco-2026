@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use this code or data, please cite the paper below."
+title: "Better Retrievers, Worse Labels: How Incomplete Relevance Judgments Distort Abstention Evaluation in Conversational RAG"
+type: software
+authors:
+  - family-names: Kochergin
+    given-names: Ivan
+version: "1.0"
+repository-code: "https://github.com/iskochergin/reteco-2026"
+license: MIT
+keywords:
+  - retrieval-augmented generation
+  - abstention
+  - conversational search
+  - relevance judgments
+  - SemEval-2027 RETECO
+  - MTRAG
+preferred-citation:
+  type: generic
+  title: "Better Retrievers, Worse Labels: How Incomplete Relevance Judgments Distort Abstention Evaluation in Conversational RAG"
+  authors:
+    - family-names: Kochergin
+      given-names: Ivan
+  year: 2026
+  notes: "arXiv preprint"

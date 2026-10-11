@@ -1,0 +1,40 @@
+# Dataset and release archives are unpacked here
+data/*
+!data/.gitkeep
+
+# Local retrieval output
+runs/*
+!runs/.gitkeep
+
+# RETECO starter kit, cloned at a pinned commit
+vendor/
+
+# Release archives
+*.zip
+
+# Script outputs that are not committed (README, step 3)
+docs/paper/out/refusal_*.csv
+docs/paper/out/refusal_flips.tex
+docs/paper/out/reranker_holes.tex
+docs/paper/out/reranker_holes.png
+docs/paper/latex/fig_*.png
+
+# LaTeX build files
+docs/paper/latex/*.aux
+docs/paper/latex/*.bbl
+docs/paper/latex/*.blg
+docs/paper/latex/*.log
+docs/paper/latex/*.out
+docs/paper/latex/*.synctex.gz
+docs/paper/latex/main.pdf
+
+# Python and Jupyter
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Secrets and OS files
+.env
+.DS_Store

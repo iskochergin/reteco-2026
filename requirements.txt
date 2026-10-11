@@ -1,0 +1,22 @@
+# Python 3.12 or later for retrieval (pyserini 2.4 requires it); the analysis
+# scripts alone need only the first block.
+# Not covered here: the Colab notebooks built by colab/build.py, which install
+# what they need (vllm, openai, pyserini, gensim, bm25s, PyStemmer, ...) and use
+# the packages preinstalled in Colab (scikit-learn, pandas), and the LLM client of
+# scripts/rewrite.py, described in its docstring.
+
+# Analysis scripts in docs/paper/scripts (tables, figures, statistics)
+numpy
+scipy
+matplotlib
+pytrec-eval-terrier        # imported as pytrec_eval
+
+# Retrieval and scoring in scripts/, including the RETECO starter kit's official BM25
+tqdm
+gensim>=4.4                # LuceneBM25Model; minimum required by the starter kit
+pyserini>=2.4              # Lucene analyzer used by the official BM25; needs a Java 21 JDK
+pyjnius
+huggingface_hub            # provides the `hf` command for the dataset download
+torch                      # scripts/retrieve.py --method dense
+transformers
+sentence-transformers
