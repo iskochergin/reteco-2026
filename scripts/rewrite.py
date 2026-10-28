@@ -32,6 +32,11 @@ runs/rewrites/<variant>/<split>.jsonl (domain, topic_id, text) for retrieve.py -
     python scripts/rewrite.py --split dev                # generate and build
     python scripts/rewrite.py --split dev --build-only   # rebuild variants only
 
+The paper's raw responses (runs/rewrites/raw/{dev,train}.jsonl with
+config_{dev,train}.json) are released as reteco-expansions.zip. Unzipped at the
+repository root, they let --build-only rebuild the paper's variants without
+calling a model; it needs only them and the RETECO data in data/reteco/.
+
 call_llm() calls the `claude` command-line client in print mode (`claude -p`);
 the paper's expansions were generated this way with Claude Sonnet 5 at low
 reasoning effort, in batches of ten turns (the defaults below). Any

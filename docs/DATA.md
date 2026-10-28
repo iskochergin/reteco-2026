@@ -3,15 +3,17 @@
 This document describes the files in the release archives and the audit files in
 `docs/`. Licenses and attributions are in [DATA_LICENSE.md](../DATA_LICENSE.md);
 each archive also carries its own notice, `data/drive/LICENSE-<archive>.md`,
-which lists the files and fields under each license. No file contains corpus passages,
-questions, dialogue history or reference answers of RECOR or MTRAG; the free-text
+which lists the files and fields under each license. No file contains corpus
+passages, dialogue history or reference answers of RECOR or MTRAG. The free-text
 fields that do occur are model outputs, which may quote short fragments of the
-documents they read.
+documents they read; a query rewrite can repeat the RECOR question word for word
+(216 of the 2,971 rewrites in `reteco-expansions.zip` do, see below).
 
 ## Layout after unpacking
 
 All archives unpack at the repository root (`unzip -o <archive>.zip`). Together
-with the RETECO dataset (downloaded separately to `data/reteco/`) they give:
+with the RETECO dataset (downloaded separately to `data/reteco/`) and the query
+variants rebuilt by `scripts/rewrite.py --build-only` they give:
 
 ```
 data/reteco/track2_recor/<domain>/      RETECO release: documents.jsonl, benchmark_{train,dev}.json, qrels_{train,dev}.txt
@@ -26,6 +28,8 @@ data/drive/reteco/
   analysis/{runs,transfer,transfer_content}.csv
   mtrag/                                Replication on MTRAG (see below)
 data/drive/audit/sample_key.csv         key of blind-audit batch 1
+runs/rewrites/raw/<split>.jsonl         LLM query expansions, with raw/config_<split>.json
+runs/rewrites/<variant>/<split>.jsonl   query variants (rebuilt, not in an archive)
 docs/audit_llm.csv, docs/audit_llm2.csv blind-audit annotations (in git)
 ```
 
@@ -106,6 +110,48 @@ the run was made: the script or notebook and its arguments (`scripts/retrieve.py
 `"w_dense": 0.7` for the hybrid). `bm25_query_train` is the official BM25
 baseline output of the RETECO starter kit (`run_2a_train.trec` of each domain),
 copied unchanged.
+
+### Query expansions: `runs/rewrites/raw/<split>.jsonl`
+
+From `reteco-expansions.zip` (release v1.1): the responses of Claude Sonnet 5
+that `scripts/rewrite.py` cached when it generated the query expansions behind
+Fusion (`bm25_fuse3`), the hybrid and the other `*_q2d` runs. One JSON object
+per turn: 858 on dev, 2,113 on train. The model saw the turn and its
+conversation history (earlier questions and answers), not the turn's reference
+answer or any corpus document.
+
+| field | meaning |
+|---|---|
+| `domain`, `topic_id` | turn |
+| `rewrite` | the turn rewritten as a self-contained question |
+| `topic_switch` | `true` if the model finds that the turn moves to another sub-topic |
+| `passage` | a 60–100 word passage that could appear in a reference document and answers the turn (the Query2doc and HyDE passage) |
+| `model` | the model that answered (`claude-sonnet-5`); `null` on the fallback line |
+| `fallback` | only on the one train turn the model refused (`biology`, `50_turn_5`): `true`; its `rewrite` is the original turn and its `passage` is empty |
+
+`config_dev.json` and `config_train.json` hold the system and task prompts
+(`system`, `task`; the task prompt has a `%s` where the batch of turns goes), the
+arguments of `scripts/rewrite.py` (`model` = `sonnet`, `effort` = `low`, `batch`
+= 10 turns per call, `workers`, `timeout`), the version of the Claude Code client
+(`cli`) and the date. In 61 dev and 155 train lines (the fallback line included)
+`rewrite` is identical to the RECOR question, almost always on the first turn of a
+dialogue, which needs no rewriting.
+
+The query variants are rebuilt from these files and the RETECO data without
+calling a model:
+
+```bash
+python scripts/rewrite.py --split dev --build-only
+python scripts/rewrite.py --split train --build-only
+```
+
+This writes `runs/rewrites/<variant>/<split>.jsonl` (`domain`, `topic_id`, `text`)
+for seven variants: `qd` (rewrite), `qd_hist` (rewrite + history), `ts` (turn,
+plus history unless the topic switched), `hyde` (passage), `q2d` (turn + history +
+passage), `qd_hyde` (rewrite + passage) and `qd_q2d` (rewrite + history +
+passage). Fusion fuses BM25 runs over `q2d`, `qd_q2d` and `qd_hyde`; the dense half
+of the hybrid encodes `q2d`. The variant files contain the turn and its history
+(RECOR text), so they are rebuilt rather than released.
 
 ### Reader responses: `gen/<reader>_<job>_<split>.jsonl`
 
@@ -361,6 +407,7 @@ author's.
 | RECOR corpus, dialogues, reference answers, qrels | RETECO text is CC BY-SA 4.0 and lacks per-document source attribution; the organizers distribute it | Hugging Face `DataScience-UIBK/RETECO-SemEval2027`, revision `ea71a271d80711a23a22cb4830ac3186f0df711a` |
 | `data/drive/audit/sample.csv` and the item files of audit batch 2 | contain questions, history, reference answers and full passages | `generate.ipynb` (cell "8. Sample for the blind audit, batch 1 → Drive/reteco/audit") for batch 1; `docs/paper/scripts/audit_build.py <out_dir>` for batch 2 |
 | MTRAG passages and conversation text (`mtrag/passages.jsonl`, text fields of `mtrag/turns.jsonl`, `mtrag/unanswerable_hybrid_top5.jsonl`) | upstream text with its own terms (Wikipedia via ClapNQ, FiQA, crawled government and cloud documentation) | `mtrag.ipynb`, which downloads MTRAG at the pinned commit |
-| LLM query expansions (rewrite, HyDE and Query2doc passages) | the query files hold the turn and its history (RECOR text) next to the generated expansion | `scripts/rewrite.py` and `query.ipynb` generate new expansions; the released runs are the reference |
+| Query variant files of the Claude Sonnet 5 expansions (`runs/rewrites/<variant>/`) | they hold the turn and its history (RECOR text) next to the generated expansion | `scripts/rewrite.py --build-only` from `reteco-expansions.zip` |
+| Open-LLM query variants of `query.ipynb` (`q2d_open` and the variants the paper does not report: `queries/`, raw responses in `qgen/`) | the query files hold the turn and its history (RECOR text) | `query.ipynb` generates them again; the `bm25_q2d_open` runs in `reteco-runs-extra.zip` are the reference |
 | Runs of unreported retrieval variants, probe features, Colab logs | not used by any paper script | numbers of the variants are in `analysis/runs.csv` |
 | Anything from the hidden SemEval-2027 test set | the organizers do not permit redistribution of hidden evaluation data or inferred gold labels | none |

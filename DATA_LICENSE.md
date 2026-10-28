@@ -9,21 +9,23 @@ the MIT License ([LICENSE](LICENSE)). This file covers everything else: the
 release archives, the audit annotations in `docs/`, the aggregate results and
 figures under `docs/paper/`, the paper source and the documentation. None of
 it contains RECOR or MTRAG corpus passages, questions or reference answers, apart
-from the short excerpts listed at the end. Nothing is derived from the hidden
-SemEval-2027 test set.
+from the short excerpts and the repeated questions listed at the end. Nothing is
+derived from the hidden SemEval-2027 test set.
 
 ## License scheme
 
 The release archives are `reteco-runs.zip`, `reteco-runs-extra.zip`,
 `reteco-model-outputs.zip`, `reteco-labels-audit.zip` and `mtrag.zip` (release
-v1.0) and `reteco-labels-small.zip` (release v1.1). All of them use one scheme.
-Each archive carries a notice (`data/drive/LICENSE-<archive>.md`) that lists its
-files and fields under each license:
+v1.0), and `reteco-labels-small.zip` and `reteco-expansions.zip` (release v1.1).
+All of them use one scheme. Each archive carries a notice
+(`data/drive/LICENSE-<archive>.md`) that lists its files and fields under each
+license:
 
 - ids, labels, scores, run files, aggregate numbers, settings and prompts:
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/);
 - machine-generated free text (reader answers and raw outputs, judge rationales
-  and raw outputs, audit rationales, synthetic transfer generations):
+  and raw outputs, audit rationales, synthetic transfer generations, query
+  expansions):
   [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/), to the extent
   any copyright subsists;
 - files or fields re-emitted from MTRAG (turns and annotator judgments): the
@@ -38,6 +40,7 @@ their outputs paraphrase and sometimes quote it.
 | `reteco-model-outputs.zip` | all other fields (ids, qrels-derived labels, reader status and scores, judge scores and response types) and `gen/config.json` | `answer` and `raw` in `gen/*.jsonl`; `rationale`, `unsupported_claims` and `raw` in `judge/*/*.jsonl`; `raw` in `transfer/art_gen.jsonl` | |
 | `reteco-labels-audit.zip` | all other fields of `suff/*.jsonl`, the judge prompt and settings in `suff/config.json`, `audit/sample_key.csv`, `analysis/*.csv` | `rationale` and `raw` in `suff/*.jsonl` | |
 | `reteco-labels-small.zip` | all other fields of `suff/*.jsonl`, the judge prompt and settings in `suff/config_<model>.json` | `rationale` and `raw` in `suff/*.jsonl` | |
+| `reteco-expansions.zip` (paths under `runs/rewrites/raw/`) | `domain`, `topic_id`, `topic_switch`, `model` and `fallback` in `dev.jsonl` and `train.jsonl`; the prompts and settings in `config_dev.json` and `config_train.json` | `rewrite` and `passage` in `dev.jsonl` and `train.jsonl` | |
 | `mtrag.zip` (paths under `data/drive/reteco/mtrag/`) | everything else: `runs/`, the fields `use` and `top5` of `turns.jsonl`, our labels and scores in `gen/` and `suff/`, the `config.json` files, `retrieval.csv`, `summary.csv` | `answer` and `raw` in `gen/*.jsonl`; `rationale` and `raw` in `suff/*.jsonl` | the MTRAG fields of `turns.jsonl` (`task_id`, `conversation_id`, `turn`, `domain`, `answerability`, `gold`, `human`), the same MTRAG fields where they are repeated in `gen/*.jsonl` and `suff/*.jsonl` (`task_id`, `domain`, `turn`, `answerability`), and `human_final` and `human_votes` in `suff/phi-4_single.jsonl` |
 | `docs/audit_llm.csv`, `docs/audit_llm2.csv` | all columns except `rationale` | `rationale` | |
 | `docs/paper/out/`, `docs/paper/latex/fig_*.pdf` | all, except the excerpts below | the excerpts below | |
@@ -57,10 +60,10 @@ revision `ea71a271d80711a23a22cb4830ac3186f0df711a`; annotations CC BY 4.0, text
 CC BY-SA 4.0), built from RECOR (Ali et al., Findings of ACL 2026,
 doi:10.18653/v1/2026.findings-acl.129) and BRIGHT (Su et al., ICLR 2025). The
 underlying content belongs to Stack Exchange contributors and to the authors of
-the third-party web pages in the corpora. Changes: we retrieved documents for
-the train and dev turns, derived the context-level qrels label (`all`, `part`,
-`none`) from the qrels, and generated responses and content labels for the
-retrieved contexts. Please cite RETECO (Abdallah et al., 2026) and RECOR (Ali et
+the third-party web pages in the corpora. Changes: we generated query
+expansions for the train and dev turns, retrieved documents for them, derived
+the context-level qrels label (`all`, `part`, `none`) from the qrels, and
+generated responses and content labels for the retrieved contexts. Please cite RETECO (Abdallah et al., 2026) and RECOR (Ali et
 al., 2026); see the README.
 
 **Model outputs.** Machine-generated text, not human annotation. Readers:
@@ -74,8 +77,9 @@ judges: `Qwen/Qwen3-8B`, `microsoft/phi-4`. Models were loaded by Hugging Face i
 without a pinned revision; the `config.json` files in `gen/`, `suff/` and
 `mtrag/` (and `suff/config_<model>.json` for the small judges) record the run
 dates. The query expansions behind BM25-fusion, the
-hybrid and the `*_q2d` runs were generated by Claude Sonnet 5 (Anthropic); the
-expansion text is not released. `transfer/art_gen.jsonl` contains OCC-RAG-1.7B
+hybrid and the `*_q2d` runs (`reteco-expansions.zip`) were generated by Claude
+Sonnet 5 (Anthropic) through Claude Code; `runs/rewrites/raw/config_*.json`
+record the prompts and settings. `transfer/art_gen.jsonl` contains OCC-RAG-1.7B
 responses to SQuAD 2.0 (Rajpurkar et al., 2018) and MuSiQue (Trivedi et al.,
 2022) items and may quote them.
 
@@ -104,8 +108,15 @@ questions and sentences of corpus documents) used as examples in the paper:
 - `docs/paper/out/v2/anatomy_examples.csv` (columns `question` and `shared_sentence`)
 - `docs/paper/latex/main.tex` (Figure 1 quotes one question and one passage)
 
-These excerpts are text from the RETECO SemEval-2027 release (CC BY-SA 4.0);
-original content by Stack Exchange contributors (stackexchange.com) and the
-authors of the third-party web pages in the corpus; via RECOR (Ali et al., 2026)
-and BRIGHT (Su et al., 2025). Licensed under CC BY-SA 4.0:
+In `reteco-expansions.zip`, the `rewrite` field repeats the RECOR question word
+for word in 61 of 858 dev lines and 155 of 2,113 train lines: turns that were
+already self-contained, and one train turn the model refused (`"fallback": true`),
+which keeps the original question. Other rewrites reuse much of the question's
+wording.
+
+These excerpts and repeated questions are text from the RETECO SemEval-2027
+release (CC BY-SA 4.0); original content by Stack Exchange contributors
+(stackexchange.com) and the authors of the third-party web pages in the corpus;
+via RECOR (Ali et al., 2026) and BRIGHT (Su et al., 2025). Licensed under
+CC BY-SA 4.0:
 https://creativecommons.org/licenses/by-sa/4.0/.

@@ -3,7 +3,7 @@
 # Not covered here: the Colab notebooks built by colab/build.py, which install
 # what they need (vllm, openai, pyserini, gensim, bm25s, PyStemmer, ...) and use
 # the packages preinstalled in Colab (scikit-learn, pandas), and the LLM client of
-# scripts/rewrite.py, described in its docstring.
+# scripts/rewrite.py, described in its docstring (not needed for --build-only).
 
 # Analysis scripts in docs/paper/scripts (tables, figures, statistics)
 numpy
