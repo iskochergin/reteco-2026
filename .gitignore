@@ -41,3 +41,4 @@ venv/
 # Secrets and OS files
 .env
 .DS_Store
+release/
