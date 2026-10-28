@@ -5,7 +5,11 @@ type: software
 authors:
   - family-names: Kochergin
     given-names: Ivan
-version: "1.0"
+    affiliation: "Letovo School"
+  - family-names: Konovalov
+    given-names: Vasily
+    affiliation: "MIRAI"
+version: "1.1"
 repository-code: "https://github.com/iskochergin/reteco-2026"
 license: MIT
 keywords:
@@ -21,5 +25,9 @@ preferred-citation:
   authors:
     - family-names: Kochergin
       given-names: Ivan
+      affiliation: "Letovo School"
+    - family-names: Konovalov
+      given-names: Vasily
+      affiliation: "MIRAI"
   year: 2026
-  notes: "arXiv preprint"
+  notes: "Preprint; arXiv link will be added"
