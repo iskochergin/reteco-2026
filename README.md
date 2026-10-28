@@ -86,7 +86,7 @@ docs/
   audit_llm2.csv        blind audit, batch 2: 150 no-gold contexts (BM25-turn, BM25-hist, Hybrid)
   paper/
     latex/              paper source: main.tex, custom.bib, fig_bias.pdf (Figure 2), fig_auroc.pdf (Figure 3)
-    scripts/            analysis scripts; every figure and table of the paper comes from one of them
+    scripts/            analysis scripts behind the paper's figures and numbers (step 3 maps each to its source)
     out/v2/             summary files written by the scripts (CSV, JSON)
     out/three_readers/  consequences_v2.py with the paper's three Qwen3 readers (Section 4.3)
     out/*.json, *.csv   outputs of two analyses that the paper does not report
@@ -226,7 +226,7 @@ Where each part of the paper comes from. Scripts without a folder are in
 | Section 4.1 and Figure 2 (numbers) | `label_v2.py` | `out/v2/label_stage.csv`, `label_deltas.csv`, `label_domains.csv`, `audit_stage.csv`, `label_v2.json` |
 | Figure 2 (drawing; grey lines: small judges) | `paper_figs.py` with `RETECO_FIG_SMALL=1` | `latex/fig_bias.pdf` |
 | Section 4.2, "Without any judge" | `judge_free.py` (reads the RECOR corpus) | `out/v2/judge_free.csv`, `judge_free.json` |
-| Table 1 (precision of every labeller, change from BM25-turn to Hybrid, κ with the audit, negative control) | `small_judges.py`; the phi-4, Qwen3-14B and audit values also come from `label_v2.py` | `out/v2/small_judges.csv`, `small_judges.json` |
+| Table 1 (precision of every labeller, change from BM25-turn to Hybrid, κ with the audit, negative control) | `small_judges.py` (every judge and the panel); the blind-audit row from `label_v2.py` | `out/v2/small_judges.csv`, `small_judges.json`; audit row: `out/v2/audit_stage.csv` |
 | Section 4.2, "Other labellers" (Cohen's κ, Fleiss' κ, Gwet's AC1, raw agreement) | `label_v2.py` (phi-4, Qwen3-14B, audit); `small_judges.py` (small judges) | `out/v2/agreement.csv`, `small_judges.json` |
 | Section 4.2, "Negative control" (phi-4 and Qwen3-14B, leniency correction) | `control_v2.py` | `out/v2/control.csv`, `control.json` |
 | Table 2, Section 4.2 "A reader answers from false-miss contexts" | `leak_check.py` | `out/v2/leak_check.csv`, `leak_check.json` |

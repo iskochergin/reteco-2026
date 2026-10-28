@@ -1,7 +1,9 @@
-"""Small open judges as a stand-in for human annotators: agreement and the decline in precision.
+"""Small open judges as a check of the content label across judge sizes and families: agreement and
+the decline in precision.
 
 Four models of 3-8B parameters from different families (colab/suff_small.ipynb) label the same
-858x5 contexts and the gold contexts with the same prompt as phi-4. In the paper: the rows of the four
+858x5 contexts as phi-4 (the top-5 of the four retrievers and the gold contexts) and the negative
+control, with the same prompt. In the paper: the rows of the four
 small judges and of their panel in Table 1, the paragraph "Other labellers" and the negative control in
 Section 4.2, and the grey lines in Figure 2(b) (paper_figs.py with RETECO_FIG_SMALL=1). Computed here:
   * per judge and stage: precision of the qrels label "no gold" as a detector of "no" (partial

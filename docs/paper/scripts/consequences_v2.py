@@ -33,7 +33,8 @@ Definitions:
   (258 with three readers, 384 with four), phi-4 vs Qwen3-14B, i.e. the "noise" threshold for the
   number of qrels-vs-content flips.
 Where the numbers of Section 4.3 are (three readers, docs/paper/out/three_readers): Figure 3 from
-auroc.csv (drawn by paper_figs.py); the 2b/2c contrast from contrast.csv (def=v1: pooled over turns;
+auroc.csv (paper_figs.py draws it from the same Qwen3 rows of docs/paper/out/v2/auroc.csv, written
+by the run without variables); the 2b/2c contrast from contrast.csv (def=v1: pooled over turns;
 def=same_turn: within turns); the counts of changed conclusions from consequences_summary.json,
 flips -> phi-4 -> "extended, verdict" (258 comparisons, 75 changes, 13 by sign; survive_judge_*: the
 refusal-based changes that an answer judge can check) and flips_judge_vs_judge (25); responses without
