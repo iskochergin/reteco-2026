@@ -1,0 +1,267 @@
+{
+ "ndcg10": {
+  "BM25-turn": 0.1827,
+  "BM25-hist": 0.4379,
+  "Fusion": 0.5496,
+  "Hybrid": 0.5913,
+  "gold": 1.0
+ },
+ "content_labels": [
+  "phi-4",
+  "Qwen3-14B"
+ ],
+ "label_stages": {
+  "qrels": [
+   "gold",
+   "BM25-turn",
+   "BM25-hist",
+   "Fusion",
+   "Hybrid"
+  ],
+  "phi-4": [
+   "gold",
+   "BM25-turn",
+   "BM25-hist",
+   "Fusion",
+   "Hybrid"
+  ],
+  "Qwen3-14B": [
+   "gold",
+   "BM25-turn",
+   "BM25-hist",
+   "Fusion",
+   "Hybrid"
+  ]
+ },
+ "n_invalid_labels": {},
+ "refusal_defs": [
+  "verdict",
+  "verdict_v1",
+  "judge_Qwen3-8B",
+  "judge_phi-4"
+ ],
+ "flips": {
+  "phi-4": {
+   "v1_compat (verdict_v1, v1 subset)": {
+    "n": 36,
+    "flips": 9,
+    "sign": 2,
+    "significance": 7,
+    "magnitude_shift": 12,
+    "by_family": {
+     "stage": 3,
+     "gold-vs-2c": 1,
+     "decomp": 5
+    },
+    "refusal_based_flips": 7,
+    "survive_judge_Qwen3-8B": "4/7",
+    "survive_judge_phi-4": "6/7"
+   },
+   "v1 subset, verdict (empty excluded)": {
+    "n": 36,
+    "flips": 9,
+    "sign": 2,
+    "significance": 7,
+    "magnitude_shift": 12,
+    "by_family": {
+     "stage": 3,
+     "gold-vs-2c": 1,
+     "decomp": 5
+    },
+    "refusal_based_flips": 7,
+    "survive_judge_Qwen3-8B": "4/7",
+    "survive_judge_phi-4": "6/7"
+   },
+   "extended, verdict": {
+    "n": 258,
+    "flips": 75,
+    "sign": 13,
+    "significance": 62,
+    "magnitude_shift": 65,
+    "by_family": {
+     "reader": 10,
+     "stage": 31,
+     "chance": 9,
+     "gold-vs-2c": 5,
+     "decomp": 20
+    },
+    "refusal_based_flips": 51,
+    "survive_judge_Qwen3-8B": "4/7",
+    "survive_judge_phi-4": "6/7"
+   },
+   "extended, verdict, outside v1 subset": {
+    "n": 222,
+    "flips": 66,
+    "sign": 11,
+    "significance": 55,
+    "magnitude_shift": 53,
+    "by_family": {
+     "reader": 10,
+     "stage": 28,
+     "chance": 9,
+     "gold-vs-2c": 4,
+     "decomp": 15
+    },
+    "refusal_based_flips": 44,
+    "survive_judge_Qwen3-8B": "0/0",
+    "survive_judge_phi-4": "0/0"
+   }
+  },
+  "Qwen3-14B": {
+   "v1_compat (verdict_v1, v1 subset)": {
+    "n": 36,
+    "flips": 8,
+    "sign": 2,
+    "significance": 6,
+    "magnitude_shift": 12,
+    "by_family": {
+     "stage": 2,
+     "gold-vs-2c": 1,
+     "decomp": 5
+    },
+    "refusal_based_flips": 7,
+    "survive_judge_Qwen3-8B": "5/7",
+    "survive_judge_phi-4": "6/7"
+   },
+   "v1 subset, verdict (empty excluded)": {
+    "n": 36,
+    "flips": 8,
+    "sign": 2,
+    "significance": 6,
+    "magnitude_shift": 12,
+    "by_family": {
+     "stage": 2,
+     "gold-vs-2c": 1,
+     "decomp": 5
+    },
+    "refusal_based_flips": 7,
+    "survive_judge_Qwen3-8B": "5/7",
+    "survive_judge_phi-4": "6/7"
+   },
+   "extended, verdict": {
+    "n": 258,
+    "flips": 70,
+    "sign": 14,
+    "significance": 56,
+    "magnitude_shift": 72,
+    "by_family": {
+     "reader": 11,
+     "stage": 22,
+     "chance": 10,
+     "gold-vs-2c": 4,
+     "decomp": 23
+    },
+    "refusal_based_flips": 48,
+    "survive_judge_Qwen3-8B": "5/7",
+    "survive_judge_phi-4": "6/7"
+   },
+   "extended, verdict, outside v1 subset": {
+    "n": 222,
+    "flips": 62,
+    "sign": 12,
+    "significance": 50,
+    "magnitude_shift": 60,
+    "by_family": {
+     "reader": 11,
+     "stage": 20,
+     "chance": 10,
+     "gold-vs-2c": 3,
+     "decomp": 18
+    },
+    "refusal_based_flips": 41,
+    "survive_judge_Qwen3-8B": "0/0",
+    "survive_judge_phi-4": "0/0"
+   }
+  }
+ },
+ "flips_judge_vs_judge": {
+  "labels": "phi-4 vs Qwen3-14B (same family as 'extended, verdict')",
+  "n": 258,
+  "flips": 25,
+  "sign": 0,
+  "significance": 25,
+  "magnitude_shift": 25,
+  "by_family": {
+   "reader": 1,
+   "stage": 11,
+   "chance": 3,
+   "decomp": 9,
+   "gold-vs-2c": 1
+  },
+  "kinds": {
+   "consistent": 190,
+   "magnitude shift": 25,
+   "significance flip": 25,
+   "sign flip (n.s.)": 18
+  }
+ },
+ "insuff_share": {
+  "qrels": {
+   "gold": 0.0,
+   "BM25-turn": 0.716,
+   "BM25-hist": 0.35,
+   "Fusion": 0.227,
+   "Hybrid": 0.184
+  },
+  "phi-4": {
+   "gold": 0.069,
+   "BM25-turn": 0.45,
+   "BM25-hist": 0.183,
+   "Fusion": 0.079,
+   "Hybrid": 0.049
+  },
+  "Qwen3-14B": {
+   "gold": 0.065,
+   "BM25-turn": 0.541,
+   "BM25-hist": 0.269,
+   "Fusion": 0.105,
+   "Hybrid": 0.072
+  }
+ },
+ "overall_refusal": {
+  "Qwen3-1.7B": {
+   "gold": 0.029,
+   "BM25-turn": 0.056,
+   "BM25-hist": 0.02,
+   "Fusion": 0.012,
+   "Hybrid": 0.008
+  },
+  "Qwen3-4B": {
+   "gold": 0.318,
+   "BM25-turn": 0.449,
+   "BM25-hist": 0.304,
+   "Fusion": 0.234,
+   "Hybrid": 0.221
+  },
+  "Qwen3-8B": {
+   "gold": 0.076,
+   "BM25-turn": 0.206,
+   "BM25-hist": 0.085,
+   "Fusion": 0.031,
+   "Hybrid": 0.029
+  }
+ },
+ "n_empty_status": {
+  "Qwen3-1.7B": {
+   "gold": 9,
+   "BM25-turn": 1,
+   "BM25-hist": 7,
+   "Fusion": 10,
+   "Hybrid": 10
+  },
+  "Qwen3-4B": {
+   "gold": 63,
+   "BM25-turn": 49,
+   "BM25-hist": 63,
+   "Fusion": 73,
+   "Hybrid": 75
+  },
+  "Qwen3-8B": {
+   "gold": 0,
+   "BM25-turn": 0,
+   "BM25-hist": 0,
+   "Fusion": 0,
+   "Hybrid": 0
+  }
+ }
+}

@@ -439,7 +439,7 @@ is done locally: `scripts/fuse.py --mode score --weights 0.6 0.4`.
 ("code", r'''
 # ── 1. Settings ──────────────────────────────────────────────────────────────
 MODEL = "Qwen/Qwen3-Reranker-4B"
-FIRST_STAGE = "bm25_fuse3_dev"   # folder in Drive/reteco/runs; BM25-fusion (dev nDCG@10 .550), the first stage of the reranker runs in Appendix B
+FIRST_STAGE = "bm25_fuse3_dev"   # folder in Drive/reteco/runs; BM25-fusion (dev nDCG@10 .550), the first stage of the reranker runs (not reported in the paper)
 QUERY_SET = "qd"      # what the reranker sees: "qd" = the rewritten standalone question (fast);
                       # "qd_hist" = with history (possibly more accurate, 3-4x slower); "query", "hist" = as provided by the organisers
 SPLIT = "dev"
@@ -820,12 +820,13 @@ def generate_nb():
 # RETECO · generating 2b and 2c answers (the paper's main experiment)
 
 Four readers answer every dev turn from the same input: dialogue history +
-current question + documents.
+current question + documents. The paper uses the three Qwen3 readers; OCC-RAG-1.7B is a
+reader from an earlier version of the analysis that the paper does not use.
 - **2b**: the gold documents, so the context is known to be sufficient.
 - **2c**: the top 5 of one of the four retrievers of the paper's ladder, with dev nDCG@10:
   BM25-turn .18, BM25-hist .44, BM25-fusion .55 and the hybrid .59. The weaker the
   retrieval, the more often the context lacks the answer.
-- **nodoc**: no documents (a control not analysed in the paper).
+- **nodoc**: no documents (the no-document control of Section 4.2 and Table 2 of the paper).
 
 Readers: `occ-ai/OCC-RAG-1.7B`, `Qwen/Qwen3-1.7B`, `Qwen/Qwen3-4B-Instruct-2507` and
 `Qwen/Qwen3-8B`. OCC writes a reasoning trace and then the status ANSWERABLE or
@@ -990,9 +991,9 @@ The judge must be a different model from the reader: files from the same reader 
 **How to run.** After `generate.ipynb`. Choose the backend in cell 1 →
 "Run all". If the run breaks off, run it again; finished scores are skipped.
 
-**Cost.** The paper's answer judgments cover OCC and Qwen3-4B on the gold documents, no
+**Cost.** The released answer judgments cover OCC and Qwen3-4B on the gold documents, no
 documents and the top 5 of the three BM25 retrievers: 858 turns × 5 contexts × 2 readers =
-8,580 per judge (17,160 for both judges); `GEN_GLOB` in cell 1 selects the files to judge.
+8,580 per judge (17,160 for both judges); the paper uses those of Qwen3-4B; `GEN_GLOB` in cell 1 selects the files to judge.
 vLLM on an A100 takes 30–60 min per ≈7k answers; the API depends on the key's rate limits.
 
 **Output.** `reteco/judge/<judge>/<generation file>.jsonl` and the summary
@@ -1254,7 +1255,7 @@ def suff_nb():
 
 The qrels label (how many gold documents are in the top-5) calls every context without
 gold insufficient, but such contexts can contain the answer: phi-4 labels 28% of them
-sufficient on BM25-turn and 72% on the hybrid (false misses, Table 1 of the paper). Here,
+sufficient on BM25-turn and 72% on the hybrid (false misses, Section 4.1 of the paper). Here,
 for every dev context the readers saw, an open sufficiency judge (`microsoft/phi-4`; the
 paper's second judge is `Qwen/Qwen3-14B`) reads the documents themselves and assigns the
 content label:
@@ -3034,8 +3035,8 @@ Repeats the paper's main experiment on a second dataset, **MTRAG** (Katsis et al
 110 conversations, 842 turns, 4 domains, human answerability for every turn, reference answers).
 Claim: the label "no gold passage in the top 5 ⇒ context is insufficient" loses precision as
 retrieval gets stronger (retrieved non-gold passages often contain the answer), and this changes
-the conclusions about reader abstention. The results are Section 7 (Replication on MTRAG)
-and Table 2 of the paper.
+the conclusions about reader abstention. The results are Section 4.4 (Replication on MTRAG)
+and Table 3 of the paper; the human check of the judge (step 5) is in Section 4.2.
 
 1. **Data**: files from `github.com/IBM/mt-rag-benchmark` at a pinned commit (`MTRAG_REV`):
    passage_level corpora clapnq, cloud, fiqa, govt (366k passages), tasks, qrels, annotator
@@ -3043,7 +3044,7 @@ and Table 2 of the paper.
 2. **Retrievers**, top 100: BM25 over all user questions, BM25 over the last turn, BM25 over
    MTRAG's rewritten question, dense `Qwen3-Embedding-0.6B` over the rewrite, and the hybrid of
    BM25 and dense over the rewrite (min-max, 0.5/0.5, fixed in advance: there is no train split).
-   Metrics: nDCG@10, R@5. Table 2 of the paper orders the retrievers by nDCG@10.
+   Metrics: nDCG@10, R@5. Table 3 of the paper orders the retrievers by nDCG@10.
 3. **Contexts**: the top 5 of each retriever, plus "all gold" of the turn (the analogue of 2b).
 4. **Judge** `microsoft/phi-4`: the same prompt and parsing as in `suff.ipynb`, with the MTRAG answer as
    reference: yes / partial / no for each context.
@@ -3051,7 +3052,8 @@ and Table 2 of the paper.
    MTRAG annotators explicitly marked as not relevant. Gives P(judge yes | annotator: not relevant).
 6. **Readers** OCC-RAG-1.7B and Qwen3-4B-Instruct-2507 answer from each context, with the same classes,
    prompts and p_answerable as in `generate.ipynb`; plus 55 unanswerable turns on the hybrid top 5
-   (they have no MTRAG rewrites, so the hybrid query there = all user questions).
+   (they have no MTRAG rewrites, so the hybrid query there = all user questions). The paper reports
+   Qwen3-4B; OCC-RAG-1.7B is a reader from an earlier version of the analysis.
 7. **Summary** with bootstrap (1000, seed 0): share of qrels *none*, judge labels, false misses,
    P/R of the *none* label, human check, reader refusals and AUROC of p_answerable under both labels.
 
@@ -3878,12 +3880,107 @@ A log of all output with timestamps is written to `logs/` in the project folder 
 ```
 """)
 
+def suff_small_nb():
+    """The contexts and prompt of suff, labelled in turn by several small open judges
+    (an inter-annotator check of the content label). The summary is computed by
+    docs/paper/scripts/small_judges.py."""
+    base = suff_nb()["cells"]
+    src = lambda c: "".join(c["source"])
+    i7 = next(i for i, c in enumerate(base) if src(c).lstrip().startswith("# ── 7."))
+    i8 = next(i for i, c in enumerate(base) if src(c).lstrip().startswith("# ── 8."))
+    step7, step8 = src(base[i7]), src(base[i8])
+    # one config per judge: suff/config.json describes the phi-4 run
+    step8 = step8.replace('open(f"{OUTS}/config.json", "w")', 'open(f"{OUTS}/config_{SHORT}.json", "w")')
+    assert "config_{SHORT}" in step8
+    # the memory share follows what is actually free after the previous model is unloaded
+    step7 = step7.replace("load_llm(JUDGE, MAXLEN, util=0.9)", "load_llm(JUDGE, MAXLEN, util=UTIL)")
+    assert "util=UTIL" in step7
+    settings = r"""
+# ── 1. Settings ──────────────────────────────────────────────────────────────
+# four small judges of different families; prompt and contexts as for phi-4 in suff.ipynb
+JUDGES = ["Qwen/Qwen3-4B-Instruct-2507", "microsoft/Phi-4-mini-instruct",
+          "HuggingFaceTB/SmolLM3-3B", "ibm-granite/granite-3.3-8b-instruct"]
+JUDGE = JUDGES[0]
+JOBS = ["2b", "2c-bm25_query", "2c-bm25_hist", "2c-bm25_fuse3",
+        "2c-hyb_dense_hanhainebula_reason-embed-qwen3-4b-0928_q2d",
+        "ctrl-hyb_dense_hanhainebula_reason-embed-qwen3-4b-0928_q2d"]
+SPLITS = ["dev"]
+K_CTX = 5
+MAXLEN = 16384
+MAX_NEW = 400
+TRIM_WORDS = 300
+CHUNK = 256
+LABEL = True
+DRIVE = "/content/drive/MyDrive/RETECO 2026/reteco"
+NEED_GPU = LABEL
+"""
+    loop = ("""
+# ── 7–8. Judges in turn: load, label, unload the model from the GPU ─────────
+import gc
+STEP7 = """ + repr(step7) + """
+STEP8 = """ + repr(step8) + """
+def free_gpu():
+    # unload the model: in vLLM V1 the engine runs in a separate process, so shut it down explicitly
+    global llm
+    try:
+        llm.llm_engine.engine_core.shutdown()
+    except Exception as e:
+        print("shutdown:", e)
+    del llm
+    globals().pop("_LOADED", None)
+    gc.collect(); torch.cuda.empty_cache()
+    for _ in range(24):          # wait up to 2 min for the memory to come back
+        free, total = torch.cuda.mem_get_info()
+        if free > 0.85 * total:
+            break
+        time.sleep(5)
+    print(f"GPU free {free / 2**30:.1f} of {total / 2**30:.1f} GB")
+
+for JUDGE in JUDGES:
+    if "llm" in globals():
+        free_gpu()
+    free, total = torch.cuda.mem_get_info()
+    UTIL = round(min(0.9, free / total - 0.03), 2)
+    exec(STEP7, globals())
+    exec(STEP8, globals())
+print("all judges done:", JUDGES)
+""")
+    md = ("markdown", """
+# RETECO · context sufficiency: small open judges
+
+The same prompt and contexts as in `suff.ipynb` (judge phi-4), labelled in turn by four
+small models of different families: Qwen3-4B-Instruct-2507, Phi-4-mini-instruct (3.8B),
+SmolLM3-3B and Granite-3.3-8B. Used for agreement between independent judges.
+
+**How to run.** Runtime → **A100** (or L4). Run all. If the run is interrupted, run it
+again; finished labels are skipped. About 5,100 prompts per judge; ≈15 min per model on an A100.
+
+**Output.** `reteco/suff/<model>_<2b|2c-stage|ctrl-…>_dev.jsonl`, next to the phi-4 and
+Qwen3-14B labels, and `reteco/suff/config_<model>.json`. **Next.** Copy the new files to
+`data/drive/reteco/suff/` and run `docs/paper/scripts/small_judges.py`.
+""")
+    cells = []
+    for i, c in enumerate(base):
+        t = src(c)
+        if c["cell_type"] == "markdown" and i == 0:
+            cells.append(md)
+        elif t.lstrip().startswith("# ── 1. Settings"):
+            cells.append(("code", settings))
+        elif i == i7:
+            cells.append(("code", loop))
+        elif i == i8 or t.lstrip().startswith("# ── 9."):
+            continue
+        else:
+            cells.append((c["cell_type"], t))
+    return nb(cells, gpu="A100")
+
+
 def save(name, d):
     cells = d["cells"]
     first = next(i for i, c in enumerate(cells) if c["cell_type"] == "code")
     extra = nb([KEEPALIVE_MD, guard_cell(name), END_CELL])["cells"]
     d["cells"] = cells[:first] + [extra[0], cells[first], extra[1]] + cells[first + 1:] + [extra[2]]
-    gpu = {"diver": "T4", "reason_embed": "T4", "rerank": "T4", "analysis": "CPU", "suff": "A100",
+    gpu = {"diver": "T4", "reason_embed": "T4", "rerank": "T4", "analysis": "CPU", "suff": "A100", "suff_small": "A100",
            "mtrag": "A100"}.get(name, "L4")
     if gpu == "CPU":
         d["metadata"].pop("accelerator", None); d["metadata"]["colab"].pop("gpuType", None)
@@ -3901,6 +3998,7 @@ save("rerank", rerank_nb())
 save("generate", generate_nb())
 save("judge", judge_nb())
 save("suff", suff_nb())
+save("suff_small", suff_small_nb())
 save("query", query_nb())
 save("llm_rerank", llm_rerank_nb())
 save("analysis", analysis_nb())

@@ -3,7 +3,26 @@ ACL style: Times, 7.5–8 pt (no text smaller than 7.5 pt: MINFS), column width 
 Okabe–Ito palette, each label keeps the same colour across all figures. The figure size equals its LaTeX
 width exactly (no bbox tight), margins are set in inches; check() verifies that no text falls outside
 the figure or overlaps other text.
-    python paper_figs.py"""
+
+Figure 2 of the paper is fig_bias.pdf and Figure 3 is fig_auroc.pdf. fig_anatomy.pdf (classes of the
+evidence document in false misses) is not a figure of the paper; the classes are given in the text of
+Section 4.2. Qwen3-14B appears by itself when its rows are in the CSV files (label_v2.py uses a judge
+file only if it has all 858 rows).
+
+Environment variables:
+  RETECO_FIG_SMALL=1       thin grey lines for the four small judges (small_judges.csv, small_judges.py)
+                           in panel (b) of fig_bias; the legend then goes above both panels. On by
+                           default in the narrow layout, off otherwise.
+  RETECO_FIG_EXCLUDE=a,b   readers to leave out of fig_auroc (the paper leaves out OCC-RAG-1.7B).
+  RETECO_FIG_COL, RETECO_FIG_PAGE
+                           column and page width in inches (default 3.03 and 6.3, the ACL template).
+                           A page width below 5.5 in gives a narrow layout: shorter labels, one legend
+                           above the panels of fig_bias, fig_auroc as a 2 x 2 grid for four readers.
+  RETECO_FIG_OUT           output folder (default docs/paper/latex).
+  RETECO_V2                input folder (default docs/paper/out/v2; for testing).
+
+Figures 2 and 3 of the paper:
+    RETECO_FIG_SMALL=1 RETECO_FIG_EXCLUDE=OCC-RAG-1.7B python docs/paper/scripts/paper_figs.py"""
 import csv, os
 from decimal import Decimal, ROUND_HALF_UP
 from collections import defaultdict
@@ -18,7 +37,10 @@ from matplotlib.transforms import blended_transform_factory as blend
 HERE = os.path.dirname(os.path.abspath(__file__))
 V2 = os.environ.get("RETECO_V2", os.path.join(HERE, "..", "out", "v2"))        # override for testing
 OUT = os.environ.get("RETECO_FIG_OUT", os.path.join(HERE, "..", "latex"))
-COL, PAGE = 3.03, 6.3
+# widths in inches: ACL column 3.03, page 6.3; a narrow page, e.g. RETECO_FIG_COL=RETECO_FIG_PAGE=4.8
+COL = float(os.environ.get("RETECO_FIG_COL", 3.03))
+PAGE = float(os.environ.get("RETECO_FIG_PAGE", 6.3))
+NARROW = PAGE < 5.5                           # narrow layout: shorter labels, AUROC as a 2×2 grid
 MINFS = 7.5                                   # minimum font size of any text in the figures, pt
 
 plt.rcParams.update({
@@ -143,8 +165,11 @@ def fig_bias():
     judges = [j for j in JUDGES if j in by] + [j for j in by if j not in JUDGES]
     for j in judges:
         by[j].sort(key=lambda r: ORDER.index(r["stage"]))
-    W, H = PAGE, 2.2
-    L, R, B, T, GAP = 0.40, 0.13, 0.34, 0.36, 0.50
+    small_on = os.environ.get("RETECO_FIG_SMALL", "1" if NARROW else "0") == "1"
+    TOP = NARROW or small_on             # one legend in two rows above the panels (in (b) it would cover the grey lines)
+    LEG = 0.34 if TOP else 0.0
+    W, H = PAGE, 2.2 + LEG
+    L, R, B, T, GAP = 0.40, 0.13, 0.34, 0.36 + LEG, 0.50
     aw = (W - L - R - GAP) / 2
     ah = H - B - T
     a = axes_in(plt.figure(figsize=(W, H)), W, H, L, B, aw, ah)
@@ -167,7 +192,16 @@ def fig_bias():
         errbar(b, [f(r["ndcg"]) for r in rs], [f(r["P"]) for r in rs], [f(r["P_lo"]) for r in rs],
                [f(r["P_hi"]) for r in rs], k, dx=dx)
 
-    stages = [(f(r["ndcg"]), STAGE[r["stage"]]) for r in q]
+    short = {"bm25_query": "Turn", "bm25_hist": "Hist"}
+    # (b), narrow layout or RETECO_FIG_SMALL=1: thin grey lines for the small judges (small_judges.py), if their labels exist
+    small = [r for r in (rows("small_judges.csv") if small_on and os.path.exists(os.path.join(V2, "small_judges.csv")) else [])
+             if r["judge"] not in JUDGES + ["panel"] and r["stage"] in KEY]
+    nd = {r["stage"]: f(r["ndcg"]) for r in q}
+    for j in dict.fromkeys(r["judge"] for r in small):
+        rs = sorted([r for r in small if r["judge"] == j], key=lambda r: ORDER.index(KEY[r["stage"]]))
+        b.plot([nd[KEY[r["stage"]]] for r in rs], [f(r["P"]) for r in rs], color="#9a9a9a", lw=0.7, marker="o",
+               ms=2.0, zorder=1)
+    stages = [(f(r["ndcg"]), short.get(r["stage"], STAGE[r["stage"]]) if NARROW else STAGE[r["stage"]]) for r in q]
     for ax in (a, b):
         ax.set_xlabel("first-stage nDCG@10")
         ax.set_xlim(0.14, 0.63)
@@ -177,14 +211,23 @@ def fig_bias():
         stage_guides(ax, stages)
     a.set_ylabel("contexts labelled insufficient (%)")
     a.set_ylim(0, 80)
-    a.set_title("(a) Share of top-5 contexts labelled insufficient", loc="left", pad=11)
+    a.set_title("(a) Contexts labelled insufficient" if NARROW else
+                "(a) Share of top-5 contexts labelled insufficient", loc="left", pad=11)
     b.set_ylabel("precision of “no gold”")
     b.set_ylim(0, 1)
     b.set_yticks([0, 0.2, 0.4, 0.6, 0.8, 1.0], ["0", ".2", ".4", ".6", ".8", "1"])
-    b.set_title("(b) Precision of “no gold” as a detector of insufficiency", loc="left", pad=11)
-    a.legend(handles=[handle("qrels")] + [handle(j) for j in judges], loc="lower left")
-    b.legend(handles=[handle(j) for j in judges] + [handle("audit", "blind audit (Claude Opus 5.5), 50 per stage")],
-             loc="lower left")
+    b.set_title("(b) Precision of “no gold”" if NARROW else
+                "(b) Precision of “no gold” as a detector of insufficiency", loc="left", pad=11)
+    if TOP:      # one legend for both panels, above them
+        extra = [Line2D([], [], color="#9a9a9a", lw=0.7, marker="o", ms=2.0, label="small judges (4)")] if small else []
+        alab = "audit (Claude Opus 5.5)" if NARROW else "blind audit (Claude Opus 5.5), 50 per stage"
+        hs = [handle("qrels")] + [handle(j) for j in judges] + [handle("audit", alab)] + extra
+        fig.legend(handles=hs, loc="upper left", bbox_to_anchor=(L / W - 0.012, 1.0), ncol=3, handlelength=2.2,
+                   columnspacing=1.2, borderaxespad=0.15, handletextpad=0.5)
+    else:
+        a.legend(handles=[handle("qrels")] + [handle(j) for j in judges], loc="lower left")
+        b.legend(handles=[handle(j) for j in judges] + [handle("audit", "blind audit (Claude Opus 5.5), 50 per stage")],
+                 loc="lower left")
     save(fig, "fig_bias")
 
 
@@ -273,17 +316,35 @@ XLAB = {"bm25_query": "BM25-turn", "bm25_hist": "BM25-hist", "bm25_fuse3": "Fusi
 
 def fig_auroc():
     """AUROC of p(answerable) under qrels and under content labels: one panel per reader, stages + gold (2b)."""
-    rs = [r for r in rows("auroc.csv") if r.get("score", "p") == "p"]   # reader, stage, label, auroc, lo, hi, delta
+    drop = set(filter(None, os.environ.get("RETECO_FIG_EXCLUDE", "").split(",")))   # the paper: OCC-RAG-1.7B
+    rs = [r for r in rows("auroc.csv") if r.get("score", "p") == "p" and r["reader"] not in drop]
     for r in rs:
         r["key"] = KEY.get(r["stage"], r["stage"])
     readers = list(dict.fromkeys(r["reader"] for r in rs))
     stages = [s for s in ORDER + ["gold"] if any(r["key"] == s for r in rs)]
     labels = ["qrels"] + [j for j in JUDGES if any(r["label"] == j for r in rs)]
-    W, H = PAGE, 2.05
-    L, R, B, T, GAP = 0.40, 0.03, 0.46, 0.40, 0.10
-    aw = (W - L - R - GAP * (len(readers) - 1)) / len(readers)
+    ncol = len(readers) if not NARROW or len(readers) <= 3 else 2
+    nrow = -(-len(readers) // ncol)
+    hs = [handle("qrels", "qrels label (all vs. none)" if len(labels) == 2 else "qrels label")]
+    hs += [handle(j, f"content label: {j}" + (" (yes vs. no)" if len(labels) == 2 else "")) for j in labels[1:]]
+    LEGKW = dict(ncol=len(hs), handlelength=2.2, columnspacing=1.2, borderaxespad=0.15, handletextpad=0.5)
+    L, R, B, GAP, VGAP = 0.40, 0.03, 0.46, 0.10, 0.24
+    # note on the numbers: at the right end of the legend row if it fits there, otherwise as a second line
+    note = "numbers: content − qrels (bold: 95% CI excludes 0)"
+    probe = plt.figure(figsize=(PAGE, 1), dpi=300)
+    rr = probe.canvas.get_renderer()
+    lg, nt = probe.legend(handles=hs, **LEGKW), probe.text(0, 0, note, fontsize=MINFS)
+    probe.canvas.draw()
+    below = NARROW or (L - 0.012 * PAGE) + (lg.get_window_extent(rr).width + nt.get_window_extent(rr).width) / probe.dpi \
+        + 0.15 > PAGE - R
+    plt.close(probe)
+    W, H = PAGE, (2.75 if NARROW and len(readers) > 3 else 2.25 if NARROW else 2.15 if below else 2.05)
+    T = 0.44 if NARROW else 0.50 if below else 0.40
+    aw = (W - L - R - GAP * (ncol - 1)) / ncol
+    ah = (H - B - T - VGAP * (nrow - 1)) / nrow
     fig = plt.figure(figsize=(W, H))
-    axes = [axes_in(fig, W, H, L + i * (aw + GAP), B, aw, H - B - T) for i in range(len(readers))]
+    axes = [axes_in(fig, W, H, L + (i % ncol) * (aw + GAP), B + (nrow - 1 - i // ncol) * (ah + VGAP), aw, ah)
+            for i in range(len(readers))]
     step = 0.24 if len(labels) == 2 else 0.2
     for ax, rd in zip(axes, readers):
         for i, key in enumerate(labels):
@@ -311,24 +372,26 @@ def fig_auroc():
         ax.axhline(0.5, color="#999999", lw=0.5, ls=":", zorder=0)
         if "gold" in stages:
             ax.axvline(stages.index("gold") - 0.5, color=GUIDE, lw=0.5, zorder=0)
-        ax.set_xticks(range(len(stages)), [XLAB[s] for s in stages], rotation=35, ha="right",
-                      rotation_mode="anchor")
+        bottom_row = axes.index(ax) // ncol == nrow - 1
+        ax.set_xticks(range(len(stages)), [XLAB[s] for s in stages] if bottom_row else [""] * len(stages),
+                      rotation=35, ha="right", rotation_mode="anchor")
         ax.set_xlim(-0.55, len(stages) - 0.45)
         ax.set_title(READER.get(rd, rd), loc="left")
         ax.set_ylim(0.4, 1.0)
         ax.set_yticks([0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
         ax.grid(axis="y", lw=0.4, color=GRID)
         ax.set_axisbelow(True)
-        if ax is not axes[0]:
+        if axes.index(ax) % ncol:
             ax.tick_params(axis="y", labelleft=False)
-    axes[0].set_yticklabels([".4", ".5", ".6", ".7", ".8", ".9", "1"])
-    axes[0].set_ylabel("AUROC of $p$(answerable)")
-    hs = [handle("qrels", "qrels label (all vs. none)" if len(labels) == 2 else "qrels label")]
-    hs += [handle(j, f"content label: {j}" + (" (yes vs. no)" if len(labels) == 2 else "")) for j in labels[1:]]
-    fig.legend(handles=hs, loc="upper left", bbox_to_anchor=(L / W - 0.012, 1.0), ncol=len(hs), handlelength=2.2,
-               columnspacing=1.2, borderaxespad=0.15, handletextpad=0.5)
-    fig.text(1 - R / W, 1 - 0.035 / H, "numbers: content − qrels (bold: 95% CI excludes 0)",
-             ha="right", va="top", fontsize=MINFS, color=MUTED)
+    for ax in axes[::ncol]:
+        ax.set_yticklabels([".4", ".5", ".6", ".7", ".8", ".9", "1"])
+        ax.set_ylabel("AUROC" if NARROW else "AUROC of $p$(answerable)")
+    fig.legend(handles=hs, loc="upper left", bbox_to_anchor=(L / W - 0.012, 1.0), **LEGKW)
+    if below:    # below the legend, as a second line
+        fig.text(L / W - 0.004, 1 - 0.215 / H, "numbers: content (phi-4) − qrels; bold: 95% CI excludes 0",
+                 ha="left", va="top", fontsize=MINFS, color=MUTED)
+    else:
+        fig.text(1 - R / W, 1 - 0.035 / H, note, ha="right", va="top", fontsize=MINFS, color=MUTED)
     save(fig, "fig_auroc")
 
 

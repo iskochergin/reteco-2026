@@ -1,16 +1,24 @@
-"""Consequences of the label swap for refusals and detectors (Section 6; Figure 4, Tables 7 and 8,
-the common-set AUROC and the flip counts): 4 readers x (gold 2b context + 4 retrievers).
+"""Consequences of the label swap for refusals and detectors (Section 4.3 of the paper: Figure 3, the
+2b/2c contrast, AUROC on the contexts that both labels keep, and the counts of changed conclusions):
+readers x (gold 2b context + 4 retrievers).
+
+The paper uses three Qwen3 readers; run from the repository root:
+    RETECO_EXCLUDE=OCC-RAG-1.7B RETECO_OUT=docs/paper/out/three_readers python docs/paper/scripts/consequences_v2.py
+Without these variables the script also includes OCC-RAG-1.7B, a fourth reader from an earlier version
+of the analysis that the paper does not use, and writes to docs/paper/out/v2 (not reported in the paper).
+Removing a reader does not change the numbers of the other readers.
 
 Extends docs/paper/scripts/refusal_flips.py, the first version of this analysis (2 readers, OCC and
-Qwen3-4B; gold and the 3 BM25 retrievers). Names containing "v1" (verdict_v1, v1_subset, def=v1 in
-contrast.csv, the "v1 subset" counts in the summary) refer to that analysis. A "stage" is the gold
-context or one of the four retrievers (BM25-turn, BM25-hist, BM25-fusion = Fusion, hybrid = Hybrid).
+Qwen3-4B; gold and the 3 BM25 retrievers; not reported in the paper). Names containing "v1" (verdict_v1,
+v1_subset, def=v1 in contrast.csv, the "v1 subset" counts in the summary) refer to that analysis. A
+"stage" is the gold context or one of the four retrievers (BM25-turn, BM25-hist, BM25-fusion = Fusion,
+hybrid = Hybrid).
 Definitions:
   refusal = reader verdict (status starts with UN). An empty status is excluded from the refusal
-  rate (verdict). verdict_v1, which counts an empty status as no refusal (as refusal_flips.py does),
-  is kept for comparison with refusal_flips.py. On the 87-comparison subset (2 readers, 3 BM25
-  retrievers) with the phi-4 content label, verdict_v1 gives 20 changed conclusions and verdict
-  gives 17, the number reported in Section 6.
+  rate (verdict), as in Section 3 of the paper. verdict_v1, which counts an empty status as no refusal
+  (as refusal_flips.py does), is kept for comparison with refusal_flips.py. With four readers, on the
+  87-comparison subset (2 readers, 3 BM25 retrievers) with the phi-4 content label, verdict_v1 gives
+  20 changed conclusions and verdict gives 17 (not reported in the paper).
   Judge-based refusal: response_type == refused (Qwen3-8B, as in refusal_flips.py; plus phi-4),
   available only for OCC and Qwen3-4B on gold / BM25-turn / BM25-hist / BM25-fusion.
   Labels: qrels all/part/none (S/P/I); content-based yes/partial/no (phi-4; Qwen3-14B if its file
@@ -21,13 +29,21 @@ Definitions:
   row 0); with verdict_v1 on the v1 subset it reproduces the 20 of 87 changed conclusions of
   refusal_flips.py.
   auroc_common.csv: AUROC under both labels on the common set (qrels all/none AND content
-  yes/no), paired difference. flips_judge_vs_judge in the summary: the same family of 384
-  comparisons, phi-4 vs Qwen3-14B, i.e. the "noise" threshold for the number of qrels-vs-content flips.
-Output: docs/paper/out/v2/{refusal,auroc,auroc_common,contrast,decomp,flips}.csv, consequences_summary.json.
-CPU only, runs in seconds.
+  yes/no), paired difference. flips_judge_vs_judge in the summary: the same family of comparisons
+  (258 with three readers, 384 with four), phi-4 vs Qwen3-14B, i.e. the "noise" threshold for the
+  number of qrels-vs-content flips.
+Where the numbers of Section 4.3 are (three readers, docs/paper/out/three_readers): Figure 3 from
+auroc.csv (drawn by paper_figs.py); the 2b/2c contrast from contrast.csv (def=v1: pooled over turns;
+def=same_turn: within turns); the counts of changed conclusions from consequences_summary.json,
+flips -> phi-4 -> "extended, verdict" (258 comparisons, 75 changes, 13 by sign; survive_judge_*: the
+refusal-based changes that an answer judge can check) and flips_judge_vs_judge (25); responses without
+a status line per context set in n_empty_status.
+Output: <RETECO_OUT, default docs/paper/out/v2>/{refusal,auroc,auroc_common,contrast,decomp,flips}.csv,
+consequences_summary.json. CPU only, runs in seconds.
 """
 import csv
 import json
+import os
 from collections import Counter, defaultdict
 from itertools import combinations
 from pathlib import Path
@@ -37,9 +53,12 @@ import pytrec_eval
 
 ROOT = Path(__file__).resolve().parents[3]
 DRV = ROOT / "data/drive/reteco"
-OUT = ROOT / "docs/paper/out/v2"
+OUT = Path(os.environ["RETECO_OUT"]) if os.environ.get("RETECO_OUT") else ROOT / "docs/paper/out/v2"
 READERS = {"OCC-RAG-1.7B": "OCC-RAG-1.7B", "Qwen3-1.7B": "Qwen3-1.7B",
            "Qwen3-4B": "Qwen3-4B-Instruct-2507", "Qwen3-8B": "Qwen3-8B"}
+# the paper (three Qwen3 readers): RETECO_EXCLUDE=OCC-RAG-1.7B RETECO_OUT=docs/paper/out/three_readers
+for _x in filter(None, os.environ.get("RETECO_EXCLUDE", "").split(",")):
+    READERS.pop(_x)
 RD = list(READERS)
 OLD = {"OCC-RAG-1.7B", "Qwen3-4B"}  # readers of refusal_flips.py (the v1 subset)
 HYB = "2c-hyb_dense_hanhainebula_reason-embed-qwen3-4b-0928_q2d"
