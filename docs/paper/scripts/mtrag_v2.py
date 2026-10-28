@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Replication on MTRAG (Section 7): what do false misses rest on -- passages the annotators
-rejected, or passages they never saw? Input is part of what mtrag.ipynb writes to reteco/mtrag
+"""Replication on MTRAG (Section 4.4 of the paper; the human check of the judge is in Section 4.2):
+what do false misses rest on -- passages the annotators rejected, or passages they never saw? Input is part of what mtrag.ipynb writes to reteco/mtrag
 (local copy in data/drive/reteco/mtrag): turns.jsonl (gold, human annotator judgments, top-5) and
 suff/phi-4_<retriever>.jsonl. The notebook's passages.jsonl (passage texts) is not read here and
 is not released.

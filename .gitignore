@@ -18,6 +18,9 @@ docs/paper/out/refusal_flips.tex
 docs/paper/out/reranker_holes.tex
 docs/paper/out/reranker_holes.png
 docs/paper/latex/fig_*.png
+# written by paper_figs.py and tables_v2.py, but not used by the paper
+docs/paper/latex/fig_anatomy.pdf
+docs/paper/out/tables/
 
 # LaTeX build files
 docs/paper/latex/*.aux

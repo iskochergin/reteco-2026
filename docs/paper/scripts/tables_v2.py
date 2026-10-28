@@ -1,13 +1,15 @@
-"""LaTeX tables for the paper: docs/paper/out/v2/*.csv → docs/paper/latex/tables/tab_*.tex.
+"""LaTeX tables of an earlier, longer version of the paper: docs/paper/out/v2/*.csv → docs/paper/out/tables/tab_*.tex.
+Not needed to reproduce the paper: its three tables are typeset in docs/paper/latex/main.tex (see README for
+the scripts behind each number), and some of these tables include OCC-RAG-1.7B, a reader the paper does not use.
 
-tab_bias        main table (Table 1): nDCG, share labelled insufficient, P/R/F1, false misses, P under Qwen3-14B and the audit
+tab_bias        main table of the earlier version: nDCG, share labelled insufficient, P/R/F1, false misses, P under Qwen3-14B and the audit
 tab_contrast    2b/2c contrast: 4 readers × 4 retrievers, qrels vs. content label (phi-4)
 tab_detectors   AUROC of insufficiency detectors on BM25-fusion and the hybrid under the two labels
 tab_agreement   agreement of the blind audit, phi-4 and Qwen3-14B, and the audit × phi-4 matrix (250 items)
-tab_sameturn    within-turn 2b/2c contrast (contrast.csv, def=same_turn): appendix
+tab_sameturn    within-turn 2b/2c contrast (contrast.csv, def=same_turn)
 tab_audit_auroc AUROC of OCC and Qwen3-4B on the 100 audited BM25-fusion contexts (out/refusal_flips.json, audit100)
 
-All tables are single-column (\\columnwidth), booktabs, minus sign as $-$. They need the main.tex preamble macros
+All tables are single-column (\\columnwidth), booktabs, minus sign as $-$. They need the preamble macros of that earlier main.tex,
 \\ci, \\qnone, \\cno, \\cyes, \\cpart, \\pend. label_v2.py uses a judge file only if it has all 858 rows;
 a missing judge is shown as \\pend{--}.
 Widths are checked with Times New Roman metrics (≈ Times from the times package): the natural width of each
@@ -20,7 +22,7 @@ from collections import Counter, defaultdict
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 V2 = os.environ.get("RETECO_V2", os.path.join(HERE, "..", "out", "v2"))
-OUT = os.environ.get("RETECO_TAB_OUT", os.path.join(HERE, "..", "latex", "tables"))
+OUT = os.environ.get("RETECO_TAB_OUT", os.path.join(HERE, "..", "out", "tables"))
 SUFF = os.path.join(ROOT, "data", "drive", "reteco", "suff")
 HYB = "hyb_dense_hanhainebula_reason-embed-qwen3-4b-0928_q2d"
 ST = ["bm25_query", "bm25_hist", "bm25_fuse3", "hybrid"]

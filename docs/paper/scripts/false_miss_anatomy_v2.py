@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""False-miss anatomy (Section 5, Figure 3, Appendix H) on the four retrievers (BM25-turn,
-BM25-hist, BM25-fusion, hybrid; called stages in the code, with display names BM25-turn,
-BM25-hist, Fusion, Hybrid).
+"""False-miss anatomy on the four retrievers (BM25-turn, BM25-hist, BM25-fusion, hybrid; called
+stages in the code, with display names BM25-turn, BM25-hist, Fusion, Hybrid). In the paper: the
+paragraph "What a false miss contains" in Section 4.2 (class shares, domain groups, the audit's false
+misses, the base rate of dialogue-tied documents and the precision after discounting them). The bar
+chart that paper_figs.py draws from anatomy.csv (fig_anatomy.pdf) and the examples are not in the paper.
 
 Definitions and priority:
 a false miss is suff_qrels == none (no qrels gold in the top-5) with judge label yes
@@ -24,7 +26,7 @@ Batch 1 is also checked against data/drive/audit/sample.csv (the audited texts) 
 documents were shown in context_ids order, so that the audit's evidence_docs indices point into
 context_ids. That file contains benchmark text and is not released; without it the check is
 skipped and anatomy_summary.json records "not checked (sample.csv not released)".
-Appendix examples: 3 near-duplicates with a verbatim shared sentence (anatomy_examples.csv).
+Examples (not in the paper): 3 near-duplicates with a verbatim shared sentence (anatomy_examples.csv).
 Base rate (anatomy_base.csv, base_rate in anatomy_summary.json): classes of ALL top-5 documents
 in qrels-none contexts (gold_elsewhere -> other), the share of none contexts with at least one
 tied document, the share of evidence by class, and qrels-none precision after removing
@@ -61,7 +63,7 @@ ROWS = ["BM25-turn", "BM25-hist", "Fusion", "Hybrid",
         "Fusion: StackExchange", "Fusion: BRIGHT", "Hybrid: StackExchange", "Hybrid: BRIGHT"]
 JAC, CONT, B, SEED, N_TURNS = 0.7, 0.8, 1000, 0, 858
 SE_RE = re.compile(r"_(ex_\d+)_(doc|neg|google_neg)_(\d+)$")
-# Appendix examples were picked by hand from the candidates (set CANDIDATES to list them): short
+# Examples (not in the paper) were picked by hand from the candidates (set CANDIDATES to list them): short
 # documents whose shared sentence carries the answer; different stages and domains; the Figure 1
 # example (medicalsciences, glucose oxidase, Fusion) is excluded; together with it all 4 stages are covered.
 EXAMPLES = [("Hybrid", "hardware", "ex_18337_turn_4", "hardware_ex_18337_neg_9"),

@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
-"""Table 1, Table 5 and Figure 2: qrels-label bias on the four retrievers (BM25-turn, BM25-hist,
-BM25-fusion, hybrid), both judges and the blind audit.
+"""qrels-label bias on the four retrievers (BM25-turn, BM25-hist, BM25-fusion, hybrid), both judges
+and the blind audit. In the paper: Section 4.1 and Figure 2 (drawn from label_stage.csv and
+audit_stage.csv by paper_figs.py); the phi-4, Qwen3-14B and blind-audit rows of Table 1 (precision,
+change from BM25-turn to the hybrid in label_deltas.csv, kappa with the audit in agreement.csv); the
+agreement figures in Section 4.2; the dialogue-level bootstrap in Section 3 (conv_bootstrap in
+label_v2.json).
 
 In code and output files, a "stage" is one of the four retrievers (bm25_query = BM25-turn,
 bm25_hist = BM25-hist, bm25_fuse3 = BM25-fusion, hybrid), or "gold" for the gold (2b) context.

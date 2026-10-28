@@ -1,4 +1,4 @@
-"""Reranker harm vs. holes in the qrels (dev, 858 turns, 11 domains).
+"""Reranker harm vs. holes in the qrels (dev, 858 turns, 11 domains). Not reported in the paper.
 
 What is computed:
   1. Per-domain nDCG@10: bm25_fuse3 (first stage), Qwen3-Reranker-4B, ReasonRank-7B; deltas with

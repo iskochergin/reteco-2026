@@ -1,7 +1,8 @@
 """Reader refusals along the retriever ladder (OCC and Qwen3-4B; gold and the three BM25 retrievers):
 Kitagawa decomposition, detector AUROC under the qrels and content (phi-4) labels, and the list of
-changed conclusions ("conclusion flips"). consequences_v2.py extends this to four readers and four
-retrievers; Table 6 (tab_audit_auroc, written by tables_v2.py) uses this script's audit output.
+changed conclusions ("conclusion flips"). Not reported in the paper: consequences_v2.py extends this
+analysis to more readers and four retrievers and is the version the paper uses. tab_audit_auroc, written
+by tables_v2.py (also not in the paper), uses this script's audit output.
 Stage names here: gold = 2b, query = BM25-turn, hist = BM25-hist, fuse3 = BM25-fusion.
 
 Refusal = reader verdict UNANSWERABLE (the status field of the reader output);

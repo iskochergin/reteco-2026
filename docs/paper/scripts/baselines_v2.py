@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Baseline answerability detectors under two labels, plus selective answering.
+"""Baseline answerability detectors under two labels, plus selective answering. In the paper: the
+paragraph "The wrong detector wins" in Section 4.3, which reports the retrieval-score detectors and the
+three Qwen3 readers. The OCC-RAG-1.7B rows (a reader from an earlier version of the analysis), the
+transfer probes and selective answering are not reported in the paper.
 
 2c stages (first-stage top-5 = reader context): BM25-turn, BM25-hist, Fusion, Hybrid; gold = 2b.
 Labels: qrels label: all = 1 (sufficient) / none = 0, part excluded;

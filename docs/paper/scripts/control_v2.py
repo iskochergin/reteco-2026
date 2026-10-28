@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Negative control for judge leniency (Section 4): labels on a context that is known to be insufficient.
+"""Negative control for judge leniency: labels on a context that is known to be insufficient. In the
+paper: the paragraph "Negative control" in Section 4.2 and the control column of Table 1 for phi-4 and
+Qwen3-14B (small_judges.py computes it for the four small judges).
 
 Context ctrl-<hybrid>: for every dev turn, the hybrid top-5 retrieved for a turn of another dialogue
 from the same domain (the dialogue offset by half the dialogue list, same turn number, else the first
