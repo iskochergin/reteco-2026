@@ -28,7 +28,7 @@ from collections import Counter
 
 import numpy as np
 
-from label_v2 import DATA, DISP, DOMAINS, OUT, ST, SUFF, load_judges, lab_of
+from label_v2 import DATA, DISP, DOMAINS, JUDGES, OUT, ST, SUFF, load_judges, lab_of
 
 CTRL = "ctrl-hyb_dense_hanhainebula_reason-embed-qwen3-4b-0928_q2d"
 B, SEED = 1000, 0
@@ -69,7 +69,7 @@ def boot(vals, dom, rng):
 
 
 def main():
-    judges, _ = load_judges()
+    judges = {j: v for j, v in load_judges()[0].items() if j in JUDGES}   # small judges: small_judges.py
     rows, js = [], {}
     for judge in judges:
         path = os.path.join(SUFF, f"{judge}_{CTRL}_dev.jsonl")

@@ -21,8 +21,9 @@ Definitions:
   P_at_turn_rates (label_v2.json base_rate_only_precision): precision at the BM25-turn R and fpr with
   this stage's share of no among yes/no, i.e. how much of the precision drop the base rate alone explains.
   A null judge label is invalid: such turns are dropped from the labels (n_invalid in the table).
-Judges: every suff/<judge>_<job>_dev.jsonl; a file is used only if it has exactly 858 rows
-(incomplete files are skipped and reported).
+Judges: phi-4 and Qwen3-14B (JUDGES), from suff/<judge>_<job>_dev.jsonl; a file is used only if it
+has exactly 858 rows (incomplete files are skipped and reported). load_judges() reads every judge in
+suff/; the four small judges of reteco-labels-small.zip sit there too and are left to small_judges.py.
 Bootstrap: paired over turns, stratified by domain, 1000 replicates, seed 0;
 p_ge0 / p_le0 = share of replicates with Δ >= 0 / Δ <= 0. Audit and agreement: bootstrap over items.
 "Gold present but judge says no": unstratified bootstrap over turns, with the same resamples as
@@ -48,6 +49,7 @@ OUT = os.path.join(ROOT, "docs", "paper", "out", "v2")
 DOMAINS = ["biology", "drones", "earth_science", "economics", "hardware", "law",
            "medicalsciences", "politics", "psychology", "robotics", "sustainable_living"]
 HYB = "hyb_dense_hanhainebula_reason-embed-qwen3-4b-0928_q2d"
+JUDGES = ["phi-4", "Qwen3-14B"]   # judges of this script and control_v2.py; small judges: small_judges.py
 # stage, job, run dir, display
 STAGES = [("bm25_query", "2c-bm25_query", "bm25_query_dev", "BM25-turn"),
           ("bm25_hist", "2c-bm25_hist", "bm25_hist_dev", "BM25-hist"),
@@ -205,6 +207,8 @@ def write_csv(name, rows):
 def main():
     os.makedirs(OUT, exist_ok=True)
     judges, skipped = load_judges()
+    judges = {j: v for j, v in judges.items() if j in JUDGES}
+    skipped = [x for x in skipped if x[0] in JUDGES]
     assert "phi-4" in judges and all(s in judges["phi-4"] for s in ST + ["gold"]), "phi-4 must be complete"
     keys = sorted(judges["phi-4"]["gold"])
     assert len(keys) == N
