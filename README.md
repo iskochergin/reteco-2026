@@ -343,9 +343,10 @@ python scripts/score.py --check-baseline
 
 ### 5. Model inference (Colab)
 
-All open-model inference ran in Google Colab on a single NVIDIA A100 (40 or
-80 GB) or L4 GPU; readers and judges ran with vLLM 0.31 in bfloat16 with greedy
-decoding (vLLM seed 0). The notebooks in `colab/` are generated from
+All open-model inference ran in Google Colab on a single GPU. Readers and judges
+ran on an NVIDIA A100 (40 or 80 GB) or L4 with vLLM 0.31 in bfloat16 with greedy
+decoding (vLLM seed 0); dense corpus embeddings were computed in float16, partly
+on a T4 (Section 3). The notebooks in `colab/` are generated from
 `colab/build.py`; edit that file and rebuild rather than editing a notebook:
 
 ```bash
