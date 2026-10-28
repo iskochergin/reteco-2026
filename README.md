@@ -158,7 +158,7 @@ unzip -o reteco-runs.zip
 unzip -o reteco-model-outputs.zip
 unzip -o reteco-labels-audit.zip
 unzip -o mtrag.zip
-unzip -o reteco-labels-small.zip -d data/drive/reteco   # its paths start at suff/
+unzip -o reteco-labels-small.zip
 unzip -o reteco-runs-extra.zip  # optional: further retrieval runs
 ```
 
@@ -177,7 +177,7 @@ data/drive/reteco/transfer/          OCC outputs on SQuAD 2.0 and MuSiQue (not u
 data/drive/reteco/analysis/          summary tables written by the notebooks
 data/drive/reteco/mtrag/             MTRAG runs, labels and reader responses
 data/drive/audit/sample_key.csv      key of blind-audit batch 1
-data/drive/LICENSE-<archive>.md      license notice of each v1.0 archive
+data/drive/LICENSE-<archive>.md      license notice of each archive
 docs/audit_llm.csv, docs/audit_llm2.csv   blind-audit annotations (in git)
 ```
 
@@ -452,7 +452,7 @@ next to the Qwen3 rows.
 | [`reteco-runs-extra.zip`](https://github.com/iskochergin/reteco-2026/releases/download/v1.0/reteco-runs-extra.zip) (optional) | v1.0 | further runs, dev and train: BM25 with a Query2doc passage by Claude (`bm25_q2d`) and by an open LLM (`bm25_q2d_open`; both in Section 3), reason-embed over Query2doc (both), Diver over Query2doc, and the hybrid with Diver | CC BY 4.0 |
 | [`reteco-model-outputs.zip`](https://github.com/iskochergin/reteco-2026/releases/download/v1.0/reteco-model-outputs.zip) | v1.0 | `gen/`: reader responses on dev for {gold, no documents, 4 retrievers}: 15,444 of the three Qwen3 readers, used by the paper, and 5,148 of OCC-RAG-1.7B; `judge/phi-4/`, `judge/Qwen3-8B/`: answer-quality judgments of Qwen3-4B and OCC-RAG-1.7B (17,160). It also contains outputs of a fourth reader, OCC-RAG-1.7B, from an earlier version of the analysis that the paper does not use: the OCC files in `gen/` and `judge/` above, OCC on train with the BM25-hist and Fusion top-5 (4,226) and `transfer/art_gen.jsonl` (OCC on 2,000 SQuAD 2.0 and MuSiQue items) | CC BY-SA 4.0 for generated text; CC BY 4.0 for ids, labels, scores and settings |
 | [`reteco-labels-audit.zip`](https://github.com/iskochergin/reteco-2026/releases/download/v1.0/reteco-labels-audit.zip) | v1.0 | `suff/`: content labels of phi-4 and Qwen3-14B for gold, the 4 retrievers and the negative control (10,296), with the judge prompt in `suff/config.json`; `data/drive/audit/sample_key.csv`; `analysis/runs.csv`; `analysis/transfer.csv`, `transfer_content.csv` (detector transfer, not reported in the paper) | CC BY 4.0; CC BY-SA 4.0 for judge rationales and raw outputs |
-| [`reteco-labels-small.zip`](https://github.com/iskochergin/reteco-2026/releases/download/v1.1/reteco-labels-small.zip) | v1.1 | `suff/`: content labels of the four small judges (Qwen3-4B-Instruct-2507, Phi-4-mini-instruct, SmolLM3-3B, Granite-3.3-8B-instruct) for gold, the 4 retrievers and the negative control (24 files × 858 = 20,592), with each judge's prompt and settings in `suff/config_<model>.json`. Paths start at `suff/`: unzip with `-d data/drive/reteco` | CC BY 4.0; CC BY-SA 4.0 for judge rationales and raw outputs |
+| [`reteco-labels-small.zip`](https://github.com/iskochergin/reteco-2026/releases/download/v1.1/reteco-labels-small.zip) | v1.1 | `suff/`: content labels of the four small judges (Qwen3-4B-Instruct-2507, Phi-4-mini-instruct, SmolLM3-3B, Granite-3.3-8B-instruct) for gold, the 4 retrievers and the negative control (24 files × 858 = 20,592), with each judge's prompt and settings in `suff/config_<model>.json` | CC BY 4.0; CC BY-SA 4.0 for judge rationales and raw outputs |
 | [`mtrag.zip`](https://github.com/iskochergin/reteco-2026/releases/download/v1.0/mtrag.zip) | v1.0 | `mtrag/runs/` (5 retrievers × 4 domains), `retrieval.csv`, `summary.csv`, `config.json`; `mtrag/suff/`: phi-4 labels (4,662 contexts, 2,724 single passages); `mtrag/gen/`: responses of Qwen3-4B, used by the paper, and of OCC-RAG-1.7B, not used (9,434 in all); `mtrag/turns.jsonl` with ids, gold, answerability, annotator judgments and top-5 ids only; a copy of the Apache License 2.0 | Apache-2.0 for MTRAG turns and judgments; CC BY 4.0 for our runs, labels and numbers; CC BY-SA 4.0 for generated text |
 
 `bm25_query_train` (BM25-turn on train) is the starter kit's official BM25

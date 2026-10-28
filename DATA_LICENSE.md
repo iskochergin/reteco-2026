@@ -17,9 +17,8 @@ SemEval-2027 test set.
 The release archives are `reteco-runs.zip`, `reteco-runs-extra.zip`,
 `reteco-model-outputs.zip`, `reteco-labels-audit.zip` and `mtrag.zip` (release
 v1.0) and `reteco-labels-small.zip` (release v1.1). All of them use one scheme.
-Each v1.0 archive carries a notice (`data/drive/LICENSE-<archive>.md`) that lists
-its files and fields under each license; for `reteco-labels-small.zip`, which
-carries no notice of its own, this file is the notice:
+Each archive carries a notice (`data/drive/LICENSE-<archive>.md`) that lists its
+files and fields under each license:
 
 - ids, labels, scores, run files, aggregate numbers, settings and prompts:
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/);

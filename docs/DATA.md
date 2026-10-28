@@ -2,23 +2,20 @@
 
 This document describes the files in the release archives and the audit files in
 `docs/`. Licenses and attributions are in [DATA_LICENSE.md](../DATA_LICENSE.md);
-each v1.0 archive also carries its own notice, `data/drive/LICENSE-<archive>.md`,
-which lists the files and fields under each license (for `reteco-labels-small.zip`,
-DATA_LICENSE.md is the notice). No file contains corpus passages,
+each archive also carries its own notice, `data/drive/LICENSE-<archive>.md`,
+which lists the files and fields under each license. No file contains corpus passages,
 questions, dialogue history or reference answers of RECOR or MTRAG; the free-text
 fields that do occur are model outputs, which may quote short fragments of the
 documents they read.
 
 ## Layout after unpacking
 
-The v1.0 archives unpack at the repository root; `reteco-labels-small.zip`
-(v1.1), whose paths start at `suff/`, unpacks with `unzip -o
-reteco-labels-small.zip -d data/drive/reteco`. Together with the RETECO dataset
-(downloaded separately to `data/reteco/`) they give:
+All archives unpack at the repository root (`unzip -o <archive>.zip`). Together
+with the RETECO dataset (downloaded separately to `data/reteco/`) they give:
 
 ```
 data/reteco/track2_recor/<domain>/      RETECO release: documents.jsonl, benchmark_{train,dev}.json, qrels_{train,dev}.txt
-data/drive/LICENSE-<archive>.md         license notice of each v1.0 archive
+data/drive/LICENSE-<archive>.md         license notice of each archive
 data/drive/reteco/
   runs/<run>/<domain>/run.trec          retrieval runs, with runs/<run>/config.json
   gen/<reader>_<job>_<split>.jsonl      reader responses, with gen/config.json
