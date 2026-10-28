@@ -150,8 +150,8 @@ for seven variants: `qd` (rewrite), `qd_hist` (rewrite + history), `ts` (turn,
 plus history unless the topic switched), `hyde` (passage), `q2d` (turn + history +
 passage), `qd_hyde` (rewrite + passage) and `qd_q2d` (rewrite + history +
 passage). Fusion fuses BM25 runs over `q2d`, `qd_q2d` and `qd_hyde`; the dense half
-of the hybrid encodes `q2d`. The variant files contain the turn and its history
-(RECOR text), so they are rebuilt rather than released.
+of the hybrid encodes `q2d`. Most variant files contain the turn or its history
+(RECOR text), so the variants are rebuilt rather than released.
 
 ### Reader responses: `gen/<reader>_<job>_<split>.jsonl`
 
@@ -407,7 +407,7 @@ author's.
 | RECOR corpus, dialogues, reference answers, qrels | RETECO text is CC BY-SA 4.0 and lacks per-document source attribution; the organizers distribute it | Hugging Face `DataScience-UIBK/RETECO-SemEval2027`, revision `ea71a271d80711a23a22cb4830ac3186f0df711a` |
 | `data/drive/audit/sample.csv` and the item files of audit batch 2 | contain questions, history, reference answers and full passages | `generate.ipynb` (cell "8. Sample for the blind audit, batch 1 → Drive/reteco/audit") for batch 1; `docs/paper/scripts/audit_build.py <out_dir>` for batch 2 |
 | MTRAG passages and conversation text (`mtrag/passages.jsonl`, text fields of `mtrag/turns.jsonl`, `mtrag/unanswerable_hybrid_top5.jsonl`) | upstream text with its own terms (Wikipedia via ClapNQ, FiQA, crawled government and cloud documentation) | `mtrag.ipynb`, which downloads MTRAG at the pinned commit |
-| Query variant files of the Claude Sonnet 5 expansions (`runs/rewrites/<variant>/`) | they hold the turn and its history (RECOR text) next to the generated expansion | `scripts/rewrite.py --build-only` from `reteco-expansions.zip` |
+| Query variant files of the Claude Sonnet 5 expansions (`runs/rewrites/<variant>/`) | most hold the turn or its history (RECOR text) next to the generated expansion | `scripts/rewrite.py --build-only` from `reteco-expansions.zip` |
 | Open-LLM query variants of `query.ipynb` (`q2d_open` and the variants the paper does not report: `queries/`, raw responses in `qgen/`) | the query files hold the turn and its history (RECOR text) | `query.ipynb` generates them again; the `bm25_q2d_open` runs in `reteco-runs-extra.zip` are the reference |
 | Runs of unreported retrieval variants, probe features, Colab logs | not used by any paper script | numbers of the variants are in `analysis/runs.csv` |
 | Anything from the hidden SemEval-2027 test set | the organizers do not permit redistribution of hidden evaluation data or inferred gold labels | none |
