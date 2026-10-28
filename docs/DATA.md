@@ -2,26 +2,30 @@
 
 This document describes the files in the release archives and the audit files in
 `docs/`. Licenses and attributions are in [DATA_LICENSE.md](../DATA_LICENSE.md);
-each archive also carries its own notice, `data/drive/LICENSE-<archive>.md`, which
-lists the files and fields under each license. No file contains corpus passages,
+each v1.0 archive also carries its own notice, `data/drive/LICENSE-<archive>.md`,
+which lists the files and fields under each license (for `reteco-labels-small.zip`,
+DATA_LICENSE.md is the notice). No file contains corpus passages,
 questions, dialogue history or reference answers of RECOR or MTRAG; the free-text
 fields that do occur are model outputs, which may quote short fragments of the
 documents they read.
 
 ## Layout after unpacking
 
-The archives unpack at the repository root. Together with the RETECO dataset
+The v1.0 archives unpack at the repository root; `reteco-labels-small.zip`
+(v1.1), whose paths start at `suff/`, unpacks with `unzip -o
+reteco-labels-small.zip -d data/drive/reteco`. Together with the RETECO dataset
 (downloaded separately to `data/reteco/`) they give:
 
 ```
 data/reteco/track2_recor/<domain>/      RETECO release: documents.jsonl, benchmark_{train,dev}.json, qrels_{train,dev}.txt
-data/drive/LICENSE-<archive>.md         license notice of each archive
+data/drive/LICENSE-<archive>.md         license notice of each v1.0 archive
 data/drive/reteco/
   runs/<run>/<domain>/run.trec          retrieval runs, with runs/<run>/config.json
   gen/<reader>_<job>_<split>.jsonl      reader responses, with gen/config.json
   judge/<judge>/<reader>_<job>_dev.jsonl   answer-quality judgments
-  suff/<judge>_<job>_dev.jsonl          content labels, with suff/config.json
-  transfer/art_gen.jsonl                OCC outputs on SQuAD 2.0 and MuSiQue
+  suff/<judge>_<job>_dev.jsonl          content labels, with suff/config.json (phi-4) and
+                                        suff/config_<model>.json (each small judge)
+  transfer/art_gen.jsonl                OCC outputs on SQuAD 2.0 and MuSiQue (not used by the paper)
   analysis/{runs,transfer,transfer_content}.csv
   mtrag/                                Replication on MTRAG (see below)
 data/drive/audit/sample_key.csv         key of blind-audit batch 1
@@ -59,7 +63,7 @@ top-5 of a run in rank order, or the turn's gold documents. `evidence_docs` are
 | job | context |
 |---|---|
 | `2b` | the turn's gold documents (task 2b) |
-| `nodoc` | no documents (a control not analysed in the paper) |
+| `nodoc` | no documents (the no-document control: Section 4.2 and Table 2 of the paper) |
 | `2c-<run>` | top-5 of the run `<run>_<split>` (task 2c) |
 | `ctrl-<run>` | negative control: the first five documents of `<run>`'s top 10 for a turn of another dialogue in the same domain that are not gold for the current turn. The other dialogue sits half the list length further on in the domain's sorted list of dialogue ids (wrapping around); its turn with the same number is used, or its first turn if there is none. |
 
@@ -108,8 +112,10 @@ copied unchanged.
 
 ### Reader responses: `gen/<reader>_<job>_<split>.jsonl`
 
-One JSON object per turn and context. Readers: `OCC-RAG-1.7B`, `Qwen3-1.7B`,
-`Qwen3-4B-Instruct-2507`, `Qwen3-8B`.
+One JSON object per turn and context. Readers: `Qwen3-1.7B`,
+`Qwen3-4B-Instruct-2507`, `Qwen3-8B` (the three readers of the paper) and
+`OCC-RAG-1.7B`, a reader from an earlier version of the analysis that the paper
+does not use.
 
 | field | meaning |
 |---|---|
@@ -134,8 +140,8 @@ One JSON object per turn and context. Readers: `OCC-RAG-1.7B`, `Qwen3-1.7B`,
 `maxlen` = 16384, `max_new` = 1200, `trim_words` = 300, dtype, GPU, date). The
 two `OCC-RAG-1.7B_2c-*_train.jsonl` files (2,113 lines each) are OCC on RECOR
 train with the BM25-hist and BM25-fusion top-5, used to train and evaluate the
-transfer detectors. Some OCC outputs contain non-English text; they are released
-as generated.
+transfer detectors (not reported in the paper). Some OCC outputs contain
+non-English text; they are released as generated.
 
 ### Answer-quality judgments: `judge/<judge>/<reader>_<job>_dev.jsonl`
 
@@ -151,7 +157,10 @@ output was parsed); `correctness`, `completeness`, `relevance`, `coherence`,
 `partial`); `unsupported_claims` (boolean); `rationale`; `raw` (full judge
 output). In the 17 of 17,160 lines where `ok` is `false`, the score fields,
 `response_type`, `unsupported_claims` and `rationale` are absent. The paper uses
-`response_type == "refused"` as an alternative definition of a refusal.
+the judgments of Qwen3-4B-Instruct-2507: a correct answer (Table 2) is an
+`ANSWERABLE` status with `response_type` other than `refused` and
+`correctness` of at least 4, and `response_type == "refused"` is an alternative
+definition of a refusal (Section 4.3).
 
 ### Content labels: `suff/<judge>_<job>_dev.jsonl`
 
@@ -179,6 +188,15 @@ which covered the jobs `2b` and the three BM25 retrievers. The later runs (the
 hybrid and negative-control jobs, and all Qwen3-14B jobs) used the same prompt and
 settings; only the judge and the list of jobs differ.
 
+The labels of the four small judges (`reteco-labels-small.zip`, release v1.1)
+have the same jobs, fields and prompt: `suff/<model>_<job>_dev.jsonl` for
+`<model>` = `Qwen3-4B-Instruct-2507`, `Phi-4-mini-instruct`, `SmolLM3-3B` and
+`granite-3.3-8b-instruct` (Hugging Face ids `Qwen/Qwen3-4B-Instruct-2507`,
+`microsoft/Phi-4-mini-instruct`, `HuggingFaceTB/SmolLM3-3B`,
+`ibm-granite/granite-3.3-8b-instruct`), 858 lines per file, written by
+`colab/suff_small.ipynb`. Each judge's prompt and settings are in
+`suff/config_<model>.json`. `docs/paper/scripts/small_judges.py` reads them.
+
 ### Blind audit: `docs/audit_llm.csv`, `docs/audit_llm2.csv`, `data/drive/audit/sample_key.csv`
 
 Batch 1 has 100 BM25-fusion contexts (50 with qrels label `none`, 50 `all`),
@@ -201,7 +219,7 @@ The context of an item is the top-5 of its run for that turn, in rank order, so
 
 ### Detector transfer: `transfer/art_gen.jsonl`
 
-2,000 OCC-RAG-1.7B outputs on synthetic answerability items: `id` is
+Not reported in the paper. 2,000 OCC-RAG-1.7B outputs on synthetic answerability items: `id` is
 `squad_<SQuAD 2.0 id>_<a|u>` or `musique_<MuSiQue id>_<a|u>`, where `a` marks
 the answerable and `u` the unanswerable version (500 of each class from each
 source); `raw` is the full OCC output. The source questions and passages are not
@@ -212,11 +230,11 @@ included; they come from SQuAD 2.0 and MuSiQue under those datasets' terms.
 - `runs.csv`: `run`, `ndcg_dev`, `r100_dev`, `ndcg_train`, `r100_train` for every
   retrieval run evaluated in `analysis.ipynb`, including variants not reported in
   the paper.
-- `transfer.csv`: AUROC of the transfer detectors under the qrels label:
+- `transfer.csv` (not reported in the paper): AUROC of the transfer detectors under the qrels label:
   `detector`, `train`, `layer`, `auroc_val` (on the held-out part of the
   training data), `auroc_dev` (on RECOR dev 2c contexts), then one column per
   first-stage run.
-- `transfer_content.csv`: the same detectors under the qrels label, the content
+- `transfer_content.csv` (not reported in the paper): the same detectors under the qrels label, the content
   label (phi-4) and the clean label, per stage and pooled over stages:
   `detector`, `train`, `layer`, `label`, `stage`, `n_pos`, `n_neg`, `auroc`.
 
@@ -239,7 +257,8 @@ these values in `XNAME` and `XLAB`.
 
 ## MTRAG files (`data/drive/reteco/mtrag/`)
 
-These files are used for the Replication on MTRAG (Section 7 of the paper).
+These files are used for the replication on MTRAG (Section 4.4 and Table 3 of
+the paper) and for the human check of the judge (Section 4.2).
 MTRAG (IBM/mt-rag-benchmark at commit `53fef6f5917c7e10c436f697e69a955dbc795d81`)
 has four domains: `clapnq`, `cloud`, `fiqa`, `govt`. A turn is identified by
 MTRAG's `task_id` (`<conversation_id><::><turn>`), which is also the topic id of
@@ -272,8 +291,8 @@ the hybrid top-5), `single` (one passage at a time).
   annotators marked not relevant), `human_final` and `human_votes` (the
   annotators' final and individual judgments), `in_corpus`,
   `same_page_as_gold` and `gold_other_turn`.
-- `gen/<reader>_<job>.jsonl`: responses of OCC-RAG-1.7B and
-  Qwen3-4B-Instruct-2507: `key`, `task_id`, `domain`, `turn`, `answerability`,
+- `gen/<reader>_<job>.jsonl`: responses of Qwen3-4B-Instruct-2507 (used by the
+  paper) and OCC-RAG-1.7B (from an earlier version of the analysis, not used): `key`, `task_id`, `domain`, `turn`, `answerability`,
   `job`, `context_ids`, `n_gold`, `gold_in_ctx`, `suff` (qrels label, `unans`
   for the unanswerable turns), `reader`, `status`, `answer`, `p_answerable`,
   `p_mass`, `finish`, `trimmed`, `raw`, with the same meaning as in the RECOR
@@ -286,7 +305,11 @@ the hybrid top-5), `single` (one passage at a time).
   relevant)` (passages the annotators marked not relevant), `human_no · same
   page` and `human_no · other page` (those on the same page as a gold passage
   and on another page), or `human_no · gold of another turn` (those that are the
-  gold passage of another turn).
+  gold passage of another turn). In the `readers` section, refusal rates and the
+  2b/2c contrast (`contrast_q`, `contrast_c`) count a response without a status
+  as an answer; the paper excludes such responses (Section 3), so its contrast
+  for Qwen3-4B on the hybrid (Section 4.4: +.09 content, +.01 qrels) differs
+  from `summary.csv` (+.10, +.02).
 - `config.json`, `gen/config.json`, `suff/config.json`: settings of the runs
   (retrievers, BM25 parameters, embedding model, judge and its prompt, readers,
   token limits, bootstrap, GPU, date).
@@ -305,8 +328,8 @@ question, the reference answer and the numbered documents (without ids) and
 answers `yes` (the documents support the core claims of the reference answer),
 `partial` (some but not all central points) or `no`, names the supporting
 documents and flags whether the answer was already given earlier in the
-dialogue. The prompt is given in Appendix D of the paper and verbatim in
-`suff/config.json`. Decoding is greedy with at most 400 new tokens; prompts
+dialogue. The prompt is not printed in the paper; it is verbatim in
+`suff/config.json` (and in `suff/config_<model>.json` for the small judges). Decoding is greedy with at most 400 new tokens; prompts
 longer than 16,384 tokens are shortened by cutting each document to 300 words.
 Binary metrics compare `yes` with `no` and drop `partial`; `null` labels are
 excluded. A false miss is a context with qrels label `none` that the judge
