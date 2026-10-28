@@ -91,7 +91,8 @@ docs/
     out/three_readers/  consequences_v2.py with the paper's three Qwen3 readers (Section 4.3)
     out/*.json, *.csv   outputs of two analyses that the paper does not report
 data/                   empty in git; the dataset and the release archives are unpacked here
-runs/                   empty in git; output of scripts/retrieve.py and scripts/fuse.py
+runs/                   empty in git; output of scripts/retrieve.py, fuse.py and rewrite.py;
+                        reteco-expansions.zip unpacks into runs/rewrites/raw/
 ```
 
 The ACL style files needed to compile `main.tex` (`acl.sty`, `acl_natbib.bst`)
