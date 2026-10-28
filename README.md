@@ -239,7 +239,7 @@ Where each part of the paper comes from. Scripts without a folder are in
 | Section 4.3, "How many conclusions change" (258 comparisons, 75 changes, 13 by sign; judge swap: 25; answer-judge check: 4 and 6 of 7) | `consequences_v2.py`, three readers | `flips` → `phi-4` → `extended, verdict` and `flips_judge_vs_judge` in `out/three_readers/consequences_summary.json`; `flips.csv`, `decomp.csv`, `refusal.csv` |
 | Table 3, Section 4.4 (nDCG@10, label shares, precision, false misses, Qwen3-4B AUROC) | `colab/mtrag.ipynb` | `labels` and `readers` rows of `data/drive/reteco/mtrag/summary.csv` |
 | Section 4.4, what the dense retriever's false misses cite | `mtrag_v2.py` | `out/v2/mtrag_anatomy.csv`, `mtrag_anatomy.json` |
-| Section 4.4, Qwen3-4B's within-turn 2b/2c contrast on the hybrid (+.09 content, +.01 qrels, neither significant; no status line on 13–23% of contexts) | `mtrag_contrast.py` | `out/v2/mtrag_contrast.json` (`contrast` → `excluded`; `no_status`) |
+| Section 4.4, Qwen3-4B's within-turn 2b/2c contrast on the hybrid (+.22 on 58 turns under the content label, significant; +.01 under qrels, not; no status line on 13–23% of contexts) | `mtrag_contrast.py` | `out/v2/mtrag_contrast.json` (`paper_same_turn`; `no_status`) |
 
 The figures need only the committed files under `docs/paper/out/v2/`:
 
@@ -259,11 +259,16 @@ versions used in the paper; rerunning overwrites them, and `git diff` shows any
 difference.
 
 **MTRAG 2b/2c contrast.** For Qwen3-4B on the MTRAG hybrid, Section 4.4 reports
-a within-turn 2b/2c contrast of +.09 under the content label and +.01 under the
-qrels label, with responses without a status line excluded, as stated in
-Section 3. `mtrag.ipynb` counts such responses as answers, so the `contrast_c`
-and `contrast_q` rows of `summary.csv` for `hybrid_rewrite` read +.10 and +.02.
-`mtrag_contrast.py` computes both versions and checks the second against `summary.csv`.
+the within-turn 2b/2c contrast as defined on RECOR (`def` = `same_turn` in
+`consequences_v2.py`): turns whose hybrid context is insufficient and whose gold
+context is sufficient under the same label, responses without a status line
+excluded as stated in Section 3. It is +.22 [.06, .38] on 58 turns under the
+content label and +.01 [−.06, .09] under the qrels label. The `contrast_c` and
+`contrast_q` rows of `summary.csv` for `hybrid_rewrite` (+.10 and +.02) use the
+definition of `mtrag.ipynb` instead: the gold context need not be sufficient,
+responses without a status line count as answers, and the bootstrap resamples
+turns within a domain. `mtrag_contrast.py` computes the paper's numbers and, as a
+check, reproduces the notebook's rows.
 
 **Audit sample check.** If `data/drive/audit/sample.csv` (the text of blind-audit
 batch 1) is present, `false_miss_anatomy_v2.py` checks that the document order
