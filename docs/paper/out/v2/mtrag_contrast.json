@@ -1,0 +1,75 @@
+{
+ "reader": "Qwen3-4B-Instruct-2507",
+ "judge": "phi-4",
+ "retriever": "hybrid_rewrite",
+ "n_turns": 777,
+ "n_boot": 1000,
+ "seed": 0,
+ "contrast": {
+  "excluded": {
+   "qrels": {
+    "n": 228,
+    "contrast": 0.01315789473684209,
+    "lo": -0.05556151645207442,
+    "hi": 0.09010028127675182,
+    "ci_excludes_0": false
+   },
+   "content": {
+    "n": 123,
+    "contrast": 0.08943089430894313,
+    "lo": -0.008492069662572004,
+    "hi": 0.18804644808743168,
+    "ci_excludes_0": false
+   }
+  },
+  "answer": {
+   "qrels": {
+    "n": 310,
+    "contrast": 0.022580645161290325,
+    "lo": -0.03610435305812793,
+    "hi": 0.08554200404858303,
+    "ci_excludes_0": false
+   },
+   "content": {
+    "n": 156,
+    "contrast": 0.10256410256410264,
+    "lo": 0.013063569376795368,
+    "hi": 0.19139335118250786,
+    "ci_excludes_0": true
+   }
+  }
+ },
+ "summary_csv_reproduced": true,
+ "no_status": {
+  "gold": {
+   "n_empty": 182,
+   "n": 777,
+   "share": 0.23423423423423423
+  },
+  "bm25_questions": {
+   "n_empty": 104,
+   "n": 777,
+   "share": 0.13384813384813385
+  },
+  "bm25_lastturn": {
+   "n_empty": 133,
+   "n": 777,
+   "share": 0.17117117117117117
+  },
+  "bm25_rewrite": {
+   "n_empty": 149,
+   "n": 777,
+   "share": 0.19176319176319176
+  },
+  "hybrid_rewrite": {
+   "n_empty": 167,
+   "n": 777,
+   "share": 0.21492921492921493
+  },
+  "dense_rewrite": {
+   "n_empty": 166,
+   "n": 777,
+   "share": 0.21364221364221364
+  }
+ }
+}
