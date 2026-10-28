@@ -156,7 +156,7 @@ done
 for a in reteco-labels-small reteco-expansions; do
     curl -LO "$BASE/v1.1/$a.zip"
 done
-shasum -a 256 *.zip             # or sha256sum; compare with the release pages
+shasum -a 256 *.zip             # or sha256sum; compare with the table under Data release
 unzip -o reteco-runs.zip
 unzip -o reteco-model-outputs.zip
 unzip -o reteco-labels-audit.zip
@@ -166,8 +166,8 @@ unzip -o reteco-runs-extra.zip  # optional: further retrieval runs
 unzip -o reteco-expansions.zip  # optional: query expansions (step 4)
 ```
 
-The release notes on each release page list the size, file count and SHA-256
-checksum of its archives.
+[Data release](#data-release) lists the size, file count and SHA-256 checksum
+of every archive.
 
 The result is the layout the scripts expect:
 
@@ -443,7 +443,7 @@ the rerankers `Qwen/Qwen3-Reranker-4B` and `liuwenhan/reasonrank-7B`.
 The release archives are assets of the
 [v1.0](https://github.com/iskochergin/reteco-2026/releases/tag/v1.0) and
 [v1.1](https://github.com/iskochergin/reteco-2026/releases/tag/v1.1) releases
-(links in the table below); the release notes give their SHA-256 checksums. They
+(links in the first table below, sizes and SHA-256 checksums in the second). They
 unpack at the repository root (step 2 above), into `data/drive/` and, for
 `reteco-expansions.zip`, into `runs/rewrites/raw/`. Formats and fields are
 described in [docs/DATA.md](docs/DATA.md), licenses and required attributions in
@@ -470,6 +470,19 @@ next to the Qwen3 rows.
 | [`reteco-labels-small.zip`](https://github.com/iskochergin/reteco-2026/releases/download/v1.1/reteco-labels-small.zip) | v1.1 | `suff/`: content labels of the four small judges (Qwen3-4B-Instruct-2507, Phi-4-mini-instruct, SmolLM3-3B, Granite-3.3-8B-instruct) for gold, the 4 retrievers and the negative control (24 files × 858 = 20,592), with each judge's prompt and settings in `suff/config_<model>.json` | CC BY 4.0; CC BY-SA 4.0 for judge rationales and raw outputs |
 | [`reteco-expansions.zip`](https://github.com/iskochergin/reteco-2026/releases/download/v1.1/reteco-expansions.zip) (optional) | v1.1 | `runs/rewrites/raw/`: the query expansions of Claude Sonnet 5 behind Fusion, the hybrid and the `*_q2d` runs, one line per turn (858 dev, 2,113 train) with a self-contained rewrite, a topic-switch flag and a Query2doc/HyDE passage; the prompts and settings in `config_{dev,train}.json`. `scripts/rewrite.py --build-only` rebuilds the query variants from them (step 4) | CC BY-SA 4.0 for rewrites and passages; CC BY 4.0 for ids, flags, prompts and settings |
 | [`mtrag.zip`](https://github.com/iskochergin/reteco-2026/releases/download/v1.0/mtrag.zip) | v1.0 | `mtrag/runs/` (5 retrievers × 4 domains), `retrieval.csv`, `summary.csv`, `config.json`; `mtrag/suff/`: phi-4 labels (4,662 contexts, 2,724 single passages); `mtrag/gen/`: responses of Qwen3-4B, used by the paper, and of OCC-RAG-1.7B, not used (9,434 in all); `mtrag/turns.jsonl` with ids, gold, answerability, annotator judgments and top-5 ids only; a copy of the Apache License 2.0 | Apache-2.0 for MTRAG turns and judgments; CC BY 4.0 for our runs, labels and numbers; CC BY-SA 4.0 for generated text |
+
+| Archive | Release | Size (MB) | Files | SHA-256 |
+|---|---|---:|---:|---|
+| `reteco-runs.zip` | v1.0 | 17.15 | 121 | `2eb70a129b37314415d7568a4650209c2d6748898853a4ffa70ad1d5fd3f311c` |
+| `reteco-runs-extra.zip` | v1.0 | 24.82 | 145 | `e78ab0c638ce55c2b7aa21683f8c44fd511bb4b611af3af8c3cc67a8a1e31f6e` |
+| `reteco-model-outputs.zip` | v1.0 | 11.11 | 49 | `0ed0a9cdf022ff69bc13a997066081d40194fa5bcfa448aadac3c649acabedb8` |
+| `reteco-labels-audit.zip` | v1.0 | 1.26 | 18 | `5bb6f700ece3c3808068d336bd6562aee7905e0240277fe66d5c930c0e5ed922` |
+| `mtrag.zip` | v1.0 | 12.20 | 54 | `c7f980ce81bc10b2ec4647964d421e219f53293e3ace1bda4a1b4a1f94c39dd5` |
+| `reteco-labels-small.zip` | v1.1 | 2.90 | 29 | `cf00ddd5549e4a279f062703fd56269ff3661b476a1bb33c3cadd75811ea8b41` |
+| `reteco-expansions.zip` | v1.1 | 0.72 | 5 | `6b9a52cf6838d165c5c410b0530a6050b527048ca0b864da564333d0bb0349d1` |
+
+Sizes are in MB (10^6 bytes); file counts include the license notice in each
+archive.
 
 `bm25_query_train` (BM25-turn on train) is the starter kit's official BM25
 output `run_2a_train.trec`, copied unchanged; its `config.json` says so.
